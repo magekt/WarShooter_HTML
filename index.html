@@ -502,86 +502,91 @@
             renderer.domElement.style.display = 'block'; // Show canvas
 
             // Initialize Tone.js and audio components ONLY after user gesture
-            Tone.start().then(() => {
-                console.log("AudioContext started successfully after user gesture.");
-                shootSound = new Tone.PolySynth(Tone.MembraneSynth, {
-                    pitchDecay: 0.005,
-                    octaves: 10,
-                    envelope: {
-                        attack: 0.001,
-                        decay: 0.01,
-                        sustain: 0.01,
-                        release: 0.01,
-                        attackCurve: "exponential"
-                    }
-                }).toDestination();
+            if (!shootSound) { // Only initialize if not already done
+                Tone.start().then(() => {
+                    console.log("AudioContext started successfully on user gesture.");
+                    shootSound = new Tone.PolySynth(Tone.MembraneSynth, {
+                        pitchDecay: 0.005,
+                        octaves: 10,
+                        envelope: {
+                            attack: 0.001,
+                            decay: 0.01,
+                            sustain: 0.01,
+                            release: 0.01,
+                            attackCurve: "exponential"
+                        }
+                    }).toDestination();
 
-                explosionSound = new Tone.NoiseSynth({
-                    noise: {
-                        type: "white"
-                    },
-                    envelope: {
-                        attack: 0.001,
-                        decay: 0.2,
-                        sustain: 0,
-                        release: 0.3
-                    }
-                }).toDestination();
+                    explosionSound = new Tone.NoiseSynth({
+                        noise: {
+                            type: "white"
+                        },
+                        envelope: {
+                            attack: 0.001,
+                            decay: 0.2,
+                            sustain: 0,
+                            release: 0.3
+                        }
+                    }).toDestination();
 
-                powerupSound = new Tone.Synth({
-                    oscillator: {
-                        type: "triangle"
-                    },
-                    envelope: {
-                        attack: 0.005,
-                        decay: 0.1,
-                        sustain: 0.2,
-                        release: 0.5
-                    }
-                }).toDestination();
+                    powerupSound = new Tone.Synth({
+                        oscillator: {
+                            type: "triangle"
+                        },
+                        envelope: {
+                            attack: 0.005,
+                            decay: 0.1,
+                            sustain: 0.2,
+                            release: 0.5
+                        }
+                    }).toDestination();
 
-                specialAttackSound = new Tone.Synth({
-                    oscillator: {
-                        type: "sawtooth"
-                    },
-                    envelope: {
-                        attack: 0.01,
-                        decay: 0.5,
-                        sustain: 0.1,
-                        release: 0.8
-                    },
-                    volume: -10 // Louder for impact
-                }).toDestination();
+                    specialAttackSound = new Tone.Synth({
+                        oscillator: {
+                            type: "sawtooth"
+                        },
+                        envelope: {
+                            attack: 0.01,
+                            decay: 0.5,
+                            sustain: 0.1,
+                            release: 0.8
+                        },
+                        volume: -10 // Louder for impact
+                    }).toDestination();
 
 
-                bgMusicSynth = new Tone.Synth({
-                    oscillator: {
-                        type: "sine"
-                    },
-                    envelope: {
-                        attack: 0.1,
-                        decay: 0.5,
-                        sustain: 0.8,
-                        release: 1
-                    }
-                }).toDestination();
+                    bgMusicSynth = new Tone.Synth({
+                        oscillator: {
+                            type: "sine"
+                        },
+                        envelope: {
+                            attack: 0.1,
+                            decay: 0.5,
+                            sustain: 0.8,
+                            release: 1
+                        }
+                    }).toDestination();
 
-                const bgMusicLoop = new Tone.Loop(time => {
-                    bgMusicSynth.triggerAttackRelease("C4", "8n", time);
-                    bgMusicSynth.triggerAttackRelease("E4", "8n", time + Tone.Time("8n").toSeconds());
-                    bgMusicSynth.triggerAttackRelease("G4", "8n", time + Tone.Time("4n").toSeconds());
-                }, "1n").start(0);
-                bgMusicSynth.volume.value = -20;
+                    const bgMusicLoop = new Tone.Loop(time => {
+                        bgMusicSynth.triggerAttackRelease("C4", "8n", time);
+                        bgMusicSynth.triggerAttackRelease("E4", "8n", time + Tone.Time("8n").toSeconds());
+                        bgMusicSynth.triggerAttackRelease("G4", "8n", time + Tone.Time("4n").toSeconds());
+                    }, "1n").start(0);
+                    bgMusicSynth.volume.value = -20;
 
-                Tone.Transport.start();
+                    Tone.Transport.start();
 
-                resetGame(); // Reset and start the game after audio is ready
-            }).catch(e => {
-                console.error("Failed to start AudioContext on user gesture:", e);
-                // Optionally show a message to the user that audio failed
-                showDramaMessage("Audio failed to start. Please try refreshing.", 3000);
-                resetGame(); // Still start the game even if audio fails
-            });
+                    resetGame(); // Reset and start the game after audio is ready
+                }).catch(e => {
+                    console.error("Failed to start AudioContext on user gesture:", e);
+                    // Optionally show a message to the user that audio failed
+                    showDramaMessage("Audio failed to start. Please try refreshing.", 3000);
+                    resetGame(); // Still start the game even if audio fails
+                });
+            } else {
+                // AudioContext is already running (e.g., if game was restarted)
+                resetGame();
+            }
         }
 
         function checkOrientation() {
@@ -846,7 +851,7 @@
                 console.log(`Enemy shot bullet from X:${origin.x.toFixed(2)}, Z:${origin.z.toFixed(2)} towards X:${target.x.toFixed(2)}, Z:${target.z.toFixed(2)}`);
             }
             scene.add(bullet);
-            if (Tone.context.state === 'running') {
+            if (Tone.context && Tone.context.state === 'running') { // Check Tone.context exists and is running
                 shootSound.triggerAttackRelease("C2", "16n");
             }
         }
@@ -860,7 +865,7 @@
             }
 
             console.log("Performing special attack!");
-            if (Tone.context.state === 'running') {
+            if (Tone.context && Tone.context.state === 'running') { // Check Tone.context exists and is running
                 specialAttackSound.triggerAttackRelease("C4", "1n"); // A long, impactful sound
             }
             showDramaMessage("Special Attack!", 1500);
@@ -1136,7 +1141,7 @@
             for (let i = powerUps.length - 1; i >= 0; i--) {
                 const pu = powerUps[i];
                 if (playerMesh && pu.position.distanceTo(playerMesh.position) < 2) {
-                    if (Tone.context.state === 'running') {
+                    if (Tone.context && Tone.context.state === 'running') { // Check Tone.context exists and is running
                         powerupSound.triggerAttackRelease("E5", "16n");
                     }
                     console.log(`Collected ${pu.userData.type} power-up.`);
@@ -1201,7 +1206,7 @@
                 explosionParticles.push(particle);
                 scene.add(particle);
             }
-            if (Tone.context.state === 'running') {
+            if (Tone.context && Tone.context.state === 'running') { // Check Tone.context exists and is running
                 explosionSound.triggerAttackRelease("8n");
             }
         }
