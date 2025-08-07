@@ -402,104 +402,20 @@
             portraitMessage = document.getElementById('portraitMessage');
             startButton = document.getElementById('startButton'); // Also get startButton here
 
-            Tone.start().then(() => {
-                console.log("Tone.js context started.");
-                shootSound = new Tone.PolySynth(Tone.MembraneSynth, {
-                    pitchDecay: 0.005,
-                    octaves: 10,
-                    envelope: {
-                        attack: 0.001,
-                        decay: 0.01,
-                        sustain: 0.01,
-                        release: 0.01,
-                        attackCurve: "exponential"
-                    }
-                }).toDestination();
-
-                explosionSound = new Tone.NoiseSynth({
-                    noise: {
-                        type: "white"
-                    },
-                    envelope: {
-                        attack: 0.001,
-                        decay: 0.2,
-                        sustain: 0,
-                        release: 0.3
-                    }
-                }).toDestination();
-
-                powerupSound = new Tone.Synth({
-                    oscillator: {
-                        type: "triangle"
-                    },
-                    envelope: {
-                        attack: 0.005,
-                        decay: 0.1,
-                        sustain: 0.2,
-                        release: 0.5
-                    }
-                }).toDestination();
-
-                specialAttackSound = new Tone.Synth({
-                    oscillator: {
-                        type: "sawtooth"
-                    },
-                    envelope: {
-                        attack: 0.01,
-                        decay: 0.5,
-                        sustain: 0.1,
-                        release: 0.8
-                    },
-                    volume: -10 // Louder for impact
-                }).toDestination();
-
-
-                bgMusicSynth = new Tone.Synth({
-                    oscillator: {
-                        type: "sine"
-                    },
-                    envelope: {
-                        attack: 0.1,
-                        decay: 0.5,
-                        sustain: 0.8,
-                        release: 1
-                    }
-                }).toDestination();
-
-                const bgMusicLoop = new Tone.Loop(time => {
-                    bgMusicSynth.triggerAttackRelease("C4", "8n", time);
-                    bgMusicSynth.triggerAttackRelease("E4", "8n", time + Tone.Time("8n").toSeconds());
-                    bgMusicSynth.triggerAttackRelease("G4", "8n", time + Tone.Time("4n").toSeconds());
-                }, "1n").start(0);
-                bgMusicSynth.volume.value = -20;
-
-                Tone.Transport.start();
-
-                loadingScreen.style.display = 'none';
-                // Show home screen after assets are loaded
-                homeScreen.style.display = 'flex';
-                checkOrientation(); // Check orientation on load
-                init(); // Call init after all global variables are set
-            }).catch(e => {
-                console.error("Tone.js AudioContext failed to start:", e);
-                loadingScreen.textContent = "Audio failed to initialize. Please ensure audio is allowed.";
-            });
+            // Hide loading screen and initialize game visuals
+            loadingScreen.style.display = 'none';
+            init(); // Call init after all global variables are set
+            checkOrientation(); // Check orientation on load
         }
 
         // --- Initialization ---
         function init() {
-            console.log("Game initialized.");
-            // These are now initialized in preloadAssets, but can be re-assigned for clarity
-            // homeScreen = document.getElementById('homeScreen');
-            // startButton = document.getElementById('startButton');
-            // portraitMessage = document.getElementById('portraitMessage');
-
+            console.log("Game initialized (visuals only).");
             dramaOverlay = document.getElementById('dramaOverlay');
             damageFlash = document.getElementById('damageFlash');
             healthFill = document.getElementById('healthFill');
             scoreDisplay = document.getElementById('scoreDisplay');
             
-
             // Scene
             scene = new THREE.Scene();
             scene.fog = new THREE.FogExp2(0x333333, 0.003);
@@ -580,19 +496,92 @@
 
         function startGame() {
             console.log("Start Game button clicked. Hiding home screen and starting game.");
-            // Resume Tone.js AudioContext after user gesture
-            if (Tone.context.state !== 'running') {
-                Tone.context.resume().then(() => {
-                    console.log("AudioContext resumed successfully.");
-                }).catch(e => {
-                    console.error("Failed to resume AudioContext:", e);
-                });
-            }
             homeScreen.style.display = 'none';
             document.getElementById('gameUI').style.display = 'flex';
             document.getElementById('mobileControls').style.display = 'flex';
             renderer.domElement.style.display = 'block'; // Show canvas
-            resetGame(); // Reset and start the game
+
+            // Initialize Tone.js and audio components ONLY after user gesture
+            Tone.start().then(() => {
+                console.log("AudioContext started successfully after user gesture.");
+                shootSound = new Tone.PolySynth(Tone.MembraneSynth, {
+                    pitchDecay: 0.005,
+                    octaves: 10,
+                    envelope: {
+                        attack: 0.001,
+                        decay: 0.01,
+                        sustain: 0.01,
+                        release: 0.01,
+                        attackCurve: "exponential"
+                    }
+                }).toDestination();
+
+                explosionSound = new Tone.NoiseSynth({
+                    noise: {
+                        type: "white"
+                    },
+                    envelope: {
+                        attack: 0.001,
+                        decay: 0.2,
+                        sustain: 0,
+                        release: 0.3
+                    }
+                }).toDestination();
+
+                powerupSound = new Tone.Synth({
+                    oscillator: {
+                        type: "triangle"
+                    },
+                    envelope: {
+                        attack: 0.005,
+                        decay: 0.1,
+                        sustain: 0.2,
+                        release: 0.5
+                    }
+                }).toDestination();
+
+                specialAttackSound = new Tone.Synth({
+                    oscillator: {
+                        type: "sawtooth"
+                    },
+                    envelope: {
+                        attack: 0.01,
+                        decay: 0.5,
+                        sustain: 0.1,
+                        release: 0.8
+                    },
+                    volume: -10 // Louder for impact
+                }).toDestination();
+
+
+                bgMusicSynth = new Tone.Synth({
+                    oscillator: {
+                        type: "sine"
+                    },
+                    envelope: {
+                        attack: 0.1,
+                        decay: 0.5,
+                        sustain: 0.8,
+                        release: 1
+                    }
+                }).toDestination();
+
+                const bgMusicLoop = new Tone.Loop(time => {
+                    bgMusicSynth.triggerAttackRelease("C4", "8n", time);
+                    bgMusicSynth.triggerAttackRelease("E4", "8n", time + Tone.Time("8n").toSeconds());
+                    bgMusicSynth.triggerAttackRelease("G4", "8n", time + Tone.Time("4n").toSeconds());
+                }, "1n").start(0);
+                bgMusicSynth.volume.value = -20;
+
+                Tone.Transport.start();
+
+                resetGame(); // Reset and start the game after audio is ready
+            }).catch(e => {
+                console.error("Failed to start AudioContext on user gesture:", e);
+                // Optionally show a message to the user that audio failed
+                showDramaMessage("Audio failed to start. Please try refreshing.", 3000);
+                resetGame(); // Still start the game even if audio fails
+            });
         }
 
         function checkOrientation() {
