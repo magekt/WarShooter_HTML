@@ -1317,7 +1317,7 @@
      }
 
      // handleShoot is now only called by autoShootNearestEnemy
-     handleShoot() {
+     handleShoot(targetDirection = null) { // Added optional targetDirection
        if (gameState.gameOver || gameState.paused) return;
        
        const now = performance.now();
@@ -1330,8 +1330,8 @@
 
        // Get bullet origin from camera position
        const startPos = camera.position.clone();
-       // Get bullet direction from camera's world direction
-       const direction = camera.getWorldDirection(new THREE.Vector3());
+       // Use targetDirection if provided, otherwise use camera's current direction
+       const direction = targetDirection ? targetDirection.clone() : camera.getWorldDirection(new THREE.Vector3());
 
        // Define damage here
        const damage = player.powerUps.damage.active ? CONFIG.BOOSTED_DAMAGE : CONFIG.BULLET_DAMAGE;
@@ -2030,11 +2030,13 @@
         let nearestEnemy = null;
         let minDistance = Infinity;
 
-        const playerPosition = player.position;
+        // Get camera's current world position for accurate bullet origin
+        const cameraWorldPos = new THREE.Vector3();
+        camera.getWorldPosition(cameraWorldPos);
 
         // Find the nearest enemy
         for (const enemy of enemies) {
-            const dist = Utils.distance(playerPosition, enemy.position);
+            const dist = Utils.distance(cameraWorldPos, enemy.position); // Calculate distance from camera
             if (dist < minDistance) {
                 minDistance = dist;
                 nearestEnemy = enemy;
@@ -2044,8 +2046,11 @@
         // If a nearest enemy is found within a certain range, shoot
         const autoShootRange = 70; // Adjust this range as needed
         if (nearestEnemy && minDistance <= autoShootRange) {
-            // Call the handleShoot function (which now uses camera direction)
-            inputManager.handleShoot(); 
+            // Calculate the direction from the camera's world position to the nearest enemy
+            const directionToEnemy = new THREE.Vector3().subVectors(nearestEnemy.position, cameraWorldPos).normalize();
+            
+            // Pass the calculated direction to handleShoot, so the bullet goes towards the enemy
+            inputManager.handleShoot(directionToEnemy); 
         }
     }
 
