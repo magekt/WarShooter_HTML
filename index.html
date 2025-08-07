@@ -31,7 +31,7 @@
             height: 60px; /* Height for UI elements */
             background: rgba(0, 0, 0, 0.5);
             display: flex;
-            justify-content: space-around;
+            justify-content: space-between; /* Changed to space-between for pause button */
             align-items: center;
             padding: 10px 20px;
             box-sizing: border-box;
@@ -62,6 +62,7 @@
             width: 100%;
             height: 100%;
             display: flex;
+            flex-direction: column; /* Allow multiple lines for messages */
             justify-content: center;
             align-items: center;
             background: rgba(0, 0, 0, 0.7);
@@ -117,33 +118,36 @@
 
         #dPad {
             display: grid;
-            grid-template-columns: repeat(3, 50px);
-            grid-template-rows: repeat(3, 50px);
-            gap: 5px;
+            grid-template-columns: repeat(3, 60px); /* Increased size */
+            grid-template-rows: repeat(3, 60px);    /* Increased size */
+            gap: 8px; /* Increased gap */
             background: rgba(50, 50, 50, 0.7);
-            border-radius: 15px;
-            padding: 10px;
+            border-radius: 20px; /* More rounded */
+            padding: 15px; /* Increased padding */
         }
 
         .dPadButton {
-            width: 50px;
-            height: 50px;
+            width: 60px; /* Increased size */
+            height: 60px; /* Increased size */
             background: #333;
             border: 2px solid #555;
-            border-radius: 10px;
+            border-radius: 12px; /* More rounded */
             display: flex;
             justify-content: center;
             align-items: center;
-            font-size: 1.5rem;
+            font-size: 1.8rem; /* Larger font */
             color: #eee;
-            user-select: none; /* Prevent text selection on touch */
+            user-select: none;
             -webkit-user-select: none;
             -moz-user-select: none;
-            touch-action: manipulation; /* Prevent default touch actions like double tap zoom */
+            touch-action: manipulation;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3); /* Added shadow */
+            transition: background 0.1s ease, box-shadow 0.1s ease;
         }
         .dPadButton:active {
             background: #555;
             border-color: #777;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.5); /* Pressed state shadow */
         }
 
         #upButton { grid-area: 1 / 2 / 2 / 3; }
@@ -155,19 +159,19 @@
         #actionButtons {
             display: flex;
             flex-direction: column;
-            gap: 10px;
+            gap: 15px; /* Increased gap */
         }
 
         .actionButton {
-            width: 80px;
-            height: 80px;
+            width: 90px; /* Increased size */
+            height: 90px; /* Increased size */
             background: #007bff;
             border: 2px solid #0056b3;
             border-radius: 50%; /* Circular buttons */
             display: flex;
             justify-content: center;
             align-items: center;
-            font-size: 1.1rem;
+            font-size: 1.2rem; /* Larger font */
             font-weight: bold;
             color: #fff;
             user-select: none;
@@ -175,7 +179,7 @@
             -moz-user-select: none;
             touch-action: manipulation;
             box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
-            transition: background 0.1s ease;
+            transition: background 0.1s ease, box-shadow 0.1s ease;
         }
         .actionButton:active {
             background: #0056b3;
@@ -187,6 +191,27 @@
         }
         #specialAttackButton:active {
             background: #b02a37;
+        }
+
+        /* Pause Button Styling */
+        #pauseButton {
+            background: #6c757d; /* Grey for pause */
+            border: 2px solid #5a6268;
+            border-radius: 8px;
+            color: white;
+            padding: 8px 15px;
+            font-size: 1rem;
+            cursor: pointer;
+            user-select: none;
+            -webkit-user-select: none;
+            -moz-user-select: none;
+            touch-action: manipulation;
+            transition: background 0.1s ease, box-shadow 0.1s ease;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+        }
+        #pauseButton:active {
+            background: #5a6268;
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
         }
 
         /* Home Screen Styling */
@@ -290,6 +315,7 @@
     </div>
 
     <div id="gameUI" style="display: none;">
+        <button id="pauseButton">Pause</button> <!-- Pause Button -->
         <div>Health: <div id="healthBar"><div id="healthFill"></div></div></div>
         <div id="scoreDisplay">Score: 0</div>
     </div>
@@ -334,11 +360,12 @@
 
         // --- Three.js Scene Setup ---
         let scene, camera, renderer, clock;
-        let dramaOverlay, damageFlash, healthFill, scoreDisplay;
+        let dramaOverlay, damageFlash, healthFill, scoreDisplay, pauseButton;
         let homeScreen, startButton, portraitMessage;
         let cameraShakeIntensity = 0;
         let cameraShakeTime = 0;
         let isGameActive = false;
+        let isGamePaused = false; // New state variable for pause
 
         // --- Game State Variables ---
         let playerMesh, playerShieldMesh;
@@ -415,6 +442,7 @@
             damageFlash = document.getElementById('damageFlash');
             healthFill = document.getElementById('healthFill');
             scoreDisplay = document.getElementById('scoreDisplay');
+            pauseButton = document.getElementById('pauseButton'); // Get pause button reference
             
             // Scene
             scene = new THREE.Scene();
@@ -489,6 +517,10 @@
             // Start Button Listener
             startButton.addEventListener('click', startGame);
             startButton.addEventListener('touchend', startGame); // For mobile touch
+
+            // Pause Button Listener
+            pauseButton.addEventListener('click', togglePause);
+            pauseButton.addEventListener('touchend', togglePause);
             
             // Initial call to animate to ensure rendering starts
             animate();
@@ -500,6 +532,9 @@
             document.getElementById('gameUI').style.display = 'flex';
             document.getElementById('mobileControls').style.display = 'flex';
             renderer.domElement.style.display = 'block'; // Show canvas
+
+            // Fullscreen request removed due to browser permissions policy.
+            // The game will run in the current windowed mode.
 
             // Initialize Tone.js and audio components ONLY after user gesture
             if (!shootSound) { // Only initialize if not already done
@@ -587,6 +622,22 @@
                 // AudioContext is already running (e.g., if game was restarted)
                 resetGame();
             }
+            // Ensure canvas size is updated after fullscreen attempt (even if not fullscreen)
+            onWindowResize();
+        }
+
+        function togglePause() {
+            isGamePaused = !isGamePaused;
+            if (isGamePaused) {
+                Tone.Transport.pause();
+                showDramaMessage("GAME PAUSED", 0); // Show indefinitely until unpaused
+                pauseButton.textContent = "Resume";
+            } else {
+                Tone.Transport.start();
+                dramaOverlay.style.opacity = 0; // Hide pause message
+                pauseButton.textContent = "Pause";
+            }
+            console.log("Game Paused:", isGamePaused);
         }
 
         function checkOrientation() {
@@ -665,6 +716,8 @@
 
             showDramaMessage("War Zone: Engage!", 2000);
             isGameActive = true;
+            isGamePaused = false; // Ensure game is not paused on reset
+            pauseButton.textContent = "Pause"; // Reset button text
         }
 
         function startNextWave() {
@@ -733,9 +786,11 @@
 
         // --- Helper Functions ---
         function onWindowResize() {
-            camera.aspect = window.innerWidth / (window.innerHeight - 60);
+            // Adjust camera aspect ratio and renderer size based on current window dimensions
+            // If in fullscreen, window.innerWidth/Height will be screen dimensions
+            camera.aspect = window.innerWidth / (window.innerHeight - (isGameActive ? 60 : 0)); // Adjust for UI height if game is active
             camera.updateProjectionMatrix();
-            renderer.setSize(window.innerWidth, window.innerHeight - 60);
+            renderer.setSize(window.innerWidth, window.innerHeight - (isGameActive ? 60 : 0));
             checkOrientation(); // Re-check orientation on resize
         }
 
@@ -1267,24 +1322,32 @@
             hazardZoneCenter.copy(position);
             const geometry = new THREE.CircleGeometry(hazardZoneRadius, 32);
             const material = new THREE.MeshBasicMaterial({ color: HAZARD_ZONE_COLOR, opacity: 0.4, transparent: true, side: THREE.DoubleSide });
-            hazardZoneMesh = new THREE.Mesh(geometry, material);
-            hazardZoneMesh.rotation.x = -Math.PI / 2;
-            hazardZoneMesh.position.copy(hazardZoneCenter);
-            scene.add(hazardZoneMesh);
+            const circle = new THREE.Mesh(geometry, material);
+            circle.rotation.x = -Math.PI / 2;
+            circle.position.copy(hazardZoneCenter);
+            scene.add(circle);
+            hazardZoneMesh = circle; // Assign to hazardZoneMesh
             console.log(`Hazard zone spawned at X:${position.x.toFixed(2)}, Z:${position.z.toFixed(2)} with radius ${hazardZoneRadius}`);
         }
 
         function showDramaMessage(message, duration = 3000) {
             dramaOverlay.textContent = message;
             dramaOverlay.style.opacity = 1;
-            setTimeout(() => {
-                dramaOverlay.style.opacity = 0;
-            }, duration);
+            if (duration > 0) { // Only set timeout if duration is positive
+                setTimeout(() => {
+                    dramaOverlay.style.opacity = 0;
+                }, duration);
+            }
         }
 
         // --- Main Animation Loop ---
         function animate() {
             requestAnimationFrame(animate);
+
+            if (isGamePaused) {
+                renderer.render(scene, camera); // Still render the paused scene
+                return; // Stop game logic updates
+            }
 
             const delta = clock.getDelta();
 
