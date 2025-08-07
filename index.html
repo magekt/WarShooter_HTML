@@ -263,6 +263,49 @@
             box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
         }
 
+        /* Volume Control Styling */
+        #volumeControl {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-left: 20px; /* Space from pause button */
+        }
+
+        #volumeControl label {
+            font-size: 1rem;
+        }
+
+        #volumeSlider {
+            width: 100px;
+            -webkit-appearance: none;
+            appearance: none;
+            height: 8px;
+            background: #555;
+            outline: none;
+            border-radius: 4px;
+            transition: background 0.2s ease;
+        }
+
+        #volumeSlider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 20px;
+            height: 20px;
+            background: #007bff;
+            border-radius: 50%;
+            cursor: pointer;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+        }
+
+        #volumeSlider::-moz-range-thumb {
+            width: 20px;
+            height: 20px;
+            background: #007bff;
+            border-radius: 50%;
+            cursor: pointer;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+        }
+
         /* Landscape Mode Enforcement for Mobile */
         @media screen and (orientation: portrait) and (max-width: 768px) {
             #portraitMessage {
@@ -316,6 +359,10 @@
 
     <div id="gameUI" style="display: none;">
         <button id="pauseButton">Pause</button> <!-- Pause Button -->
+        <div id="volumeControl">
+            <label for="volumeSlider">Volume:</label>
+            <input type="range" id="volumeSlider" min="0" max="1" step="0.05" value="0.5">
+        </div>
         <div>Health: <div id="healthBar"><div id="healthFill"></div></div></div>
         <div id="scoreDisplay">Score: 0</div>
     </div>
@@ -357,10 +404,11 @@
         const ENEMY_SHOOT_INTERVAL = 1.5; // seconds
         const HAZARD_DAMAGE_RATE = 5; // Damage per second in hazard zone
         const SPECIAL_ATTACK_COOLDOWN = 10; // seconds
+        const MAX_BULLETS_IN_POOL = 50; // Max bullets to keep in the pool
 
         // --- Three.js Scene Setup ---
         let scene, camera, renderer, clock;
-        let dramaOverlay, damageFlash, healthFill, scoreDisplay, pauseButton;
+        let dramaOverlay, damageFlash, healthFill, scoreDisplay, pauseButton, volumeSlider;
         let homeScreen, startButton, portraitMessage;
         let cameraShakeIntensity = 0;
         let cameraShakeTime = 0;
@@ -418,6 +466,9 @@
         // --- Audio Elements (using Tone.js) ---
         let shootSound, explosionSound, powerupSound, specialAttackSound, bgMusicSynth;
 
+        // --- Object Pools ---
+        const bulletPool = []; // Pool for player and enemy bullets
+
         // --- Asset Loading & Preloading (now handles Tone.js setup) ---
         function preloadAssets() {
             console.log("Preloading assets...");
@@ -443,6 +494,7 @@
             healthFill = document.getElementById('healthFill');
             scoreDisplay = document.getElementById('scoreDisplay');
             pauseButton = document.getElementById('pauseButton'); // Get pause button reference
+            volumeSlider = document.getElementById('volumeSlider'); // Get volume slider reference
             
             // Scene
             scene = new THREE.Scene();
@@ -521,6 +573,25 @@
             // Pause Button Listener
             pauseButton.addEventListener('click', togglePause);
             pauseButton.addEventListener('touchend', togglePause);
+
+            // Volume Slider Listener
+            volumeSlider.addEventListener('input', (e) => {
+                if (Tone.context && Tone.context.state === 'running') {
+                    // Tone.Master.volume.value expects decibels, convert linear 0-1 to dB
+                    // A simple conversion: 0 -> -Infinity (mute), 1 -> 0dB (full volume)
+                    // Tone.js provides Tone.dbToGain for conversion, but we can do it manually for simplicity
+                    // or just set the volume directly if the range is appropriate.
+                    // For Tone.js, volume is in dB. A good range is -60 (very quiet) to 0 (max).
+                    // Let's map 0-1 to -40dB to 0dB.
+                    const linearVolume = parseFloat(e.target.value);
+                    Tone.Master.volume.value = Tone.gainToDb(linearVolume);
+                    console.log(`Volume set to: ${linearVolume} (dB: ${Tone.Master.volume.value.toFixed(2)})`);
+                }
+            });
+            // Set initial volume
+            if (Tone.context && Tone.context.state === 'running') {
+                Tone.Master.volume.value = Tone.gainToDb(parseFloat(volumeSlider.value));
+            }
             
             // Initial call to animate to ensure rendering starts
             animate();
@@ -538,86 +609,93 @@
 
             // Initialize Tone.js and audio components ONLY after user gesture
             if (!shootSound) { // Only initialize if not already done
-                Tone.start().then(() => {
-                    console.log("AudioContext started successfully on user gesture.");
-                    shootSound = new Tone.PolySynth(Tone.MembraneSynth, {
-                        pitchDecay: 0.005,
-                        octaves: 10,
-                        envelope: {
-                            attack: 0.001,
-                            decay: 0.01,
-                            sustain: 0.01,
-                            release: 0.01,
-                            attackCurve: "exponential"
-                        }
-                    }).toDestination();
+                try {
+                    Tone.start().then(() => {
+                        console.log("AudioContext started successfully on user gesture.");
+                        shootSound = new Tone.PolySynth(Tone.MembraneSynth, {
+                            pitchDecay: 0.005,
+                            octaves: 10,
+                            envelope: {
+                                attack: 0.001,
+                                decay: 0.01,
+                                sustain: 0.01,
+                                release: 0.01,
+                                attackCurve: "exponential"
+                            }
+                        }).toDestination();
 
-                    explosionSound = new Tone.NoiseSynth({
-                        noise: {
-                            type: "white"
-                        },
-                        envelope: {
-                            attack: 0.001,
-                            decay: 0.2,
-                            sustain: 0,
-                            release: 0.3
-                        }
-                    }).toDestination();
+                        explosionSound = new Tone.NoiseSynth({
+                            noise: {
+                                type: "white"
+                            },
+                            envelope: {
+                                attack: 0.001,
+                                decay: 0.2,
+                                sustain: 0,
+                                release: 0.3
+                            }
+                        }).toDestination();
 
-                    powerupSound = new Tone.Synth({
-                        oscillator: {
-                            type: "triangle"
-                        },
-                        envelope: {
-                            attack: 0.005,
-                            decay: 0.1,
-                            sustain: 0.2,
-                            release: 0.5
-                        }
-                    }).toDestination();
+                        powerupSound = new Tone.Synth({
+                            oscillator: {
+                                type: "triangle"
+                            },
+                            envelope: {
+                                attack: 0.005,
+                                decay: 0.1,
+                                sustain: 0.2,
+                                release: 0.5
+                            }
+                        }).toDestination();
 
-                    specialAttackSound = new Tone.Synth({
-                        oscillator: {
-                            type: "sawtooth"
-                        },
-                        envelope: {
-                            attack: 0.01,
-                            decay: 0.5,
-                            sustain: 0.1,
-                            release: 0.8
-                        },
-                        volume: -10 // Louder for impact
-                    }).toDestination();
+                        specialAttackSound = new Tone.Synth({
+                            oscillator: {
+                                type: "sawtooth"
+                            },
+                            envelope: {
+                                attack: 0.01,
+                                decay: 0.5,
+                                sustain: 0.1,
+                                release: 0.8
+                            },
+                            volume: -10 // Louder for impact
+                        }).toDestination();
 
 
-                    bgMusicSynth = new Tone.Synth({
-                        oscillator: {
-                            type: "sine"
-                        },
-                        envelope: {
-                            attack: 0.1,
-                            decay: 0.5,
-                            sustain: 0.8,
-                            release: 1
-                        }
-                    }).toDestination();
+                        bgMusicSynth = new Tone.Synth({
+                            oscillator: {
+                                type: "sine"
+                            },
+                            envelope: {
+                                attack: 0.1,
+                                decay: 0.5,
+                                sustain: 0.8,
+                                release: 1
+                            }
+                        }).toDestination();
 
-                    const bgMusicLoop = new Tone.Loop(time => {
-                        bgMusicSynth.triggerAttackRelease("C4", "8n", time);
-                        bgMusicSynth.triggerAttackRelease("E4", "8n", time + Tone.Time("8n").toSeconds());
-                        bgMusicSynth.triggerAttackRelease("G4", "8n", time + Tone.Time("4n").toSeconds());
-                    }, "1n").start(0);
-                    bgMusicSynth.volume.value = -20;
+                        const bgMusicLoop = new Tone.Loop(time => {
+                            bgMusicSynth.triggerAttackRelease("C4", "8n", time);
+                            bgMusicSynth.triggerAttackRelease("E4", "8n", time + Tone.Time("8n").toSeconds());
+                            bgMusicSynth.triggerAttackRelease("G4", "8n", time + Tone.Time("4n").toSeconds());
+                        }, "1n").start(0);
+                        bgMusicSynth.volume.value = -20; // Default background music volume
 
-                    Tone.Transport.start();
+                        Tone.Transport.start();
+                        // Set initial master volume based on slider
+                        Tone.Master.volume.value = Tone.gainToDb(parseFloat(volumeSlider.value));
 
-                    resetGame(); // Reset and start the game after audio is ready
-                }).catch(e => {
-                    console.error("Failed to start AudioContext on user gesture:", e);
-                    // Optionally show a message to the user that audio failed
-                    showDramaMessage("Audio failed to start. Please try refreshing.", 3000);
-                    resetGame(); // Still start the game even if audio fails
-                });
+                        resetGame(); // Reset and start the game after audio is ready
+                    }).catch(e => {
+                        console.error("Failed to start AudioContext on user gesture:", e);
+                        showDramaMessage("Audio failed to start. Please try refreshing.", 3000);
+                        resetGame(); // Still start the game even if audio fails
+                    });
+                } catch (e) {
+                    console.error("Error initializing Tone.js:", e);
+                    showDramaMessage("Error with audio system. Try refreshing.", 3000);
+                    resetGame(); // Still start the game
+                }
             } else {
                 // AudioContext is already running (e.g., if game was restarted)
                 resetGame();
@@ -657,17 +735,21 @@
         // --- Game State Management ---
         function resetGame() {
             console.log("Game reset. Starting new round.");
+            
+            // Clear all active game elements from scene and arrays
             enemies.forEach(e => scene.remove(e.mesh));
             obstacles.forEach(o => scene.remove(o.mesh));
-            playerBullets.forEach(b => scene.remove(b));
-            enemyBullets.forEach(b => scene.remove(b));
             powerUps.forEach(p => scene.remove(p));
             explosionParticles.forEach(p => scene.remove(p));
             damageNumbers.forEach(n => scene.remove(n.sprite));
 
+            // Return all active bullets to the pool
+            playerBullets.forEach(bullet => disposeBulletMesh(bullet));
+            enemyBullets.forEach(bullet => disposeBulletMesh(bullet));
+
             enemies = [];
             obstacles = [];
-            playerBullets = [];
+            playerBullets = []; // Ensure arrays are empty after disposing
             enemyBullets = [];
             powerUps = [];
             explosionParticles = [];
@@ -758,6 +840,9 @@
             document.getElementById('gameUI').style.display = 'none';
             document.getElementById('mobileControls').style.display = 'none';
             renderer.domElement.style.display = 'none';
+            if (Tone.Transport.state === 'started') {
+                Tone.Transport.stop(); // Stop audio on game over
+            }
             setTimeout(() => {
                 homeScreen.style.display = 'flex';
                 checkOrientation(); // Re-check orientation for home screen
@@ -772,6 +857,9 @@
             document.getElementById('gameUI').style.display = 'none';
             document.getElementById('mobileControls').style.display = 'none';
             renderer.domElement.style.display = 'none';
+            if (Tone.Transport.state === 'started') {
+                Tone.Transport.stop(); // Stop audio on victory
+            }
             setTimeout(() => {
                 homeScreen.style.display = 'flex';
                 checkOrientation(); // Re-check orientation for home screen
@@ -787,7 +875,6 @@
         // --- Helper Functions ---
         function onWindowResize() {
             // Adjust camera aspect ratio and renderer size based on current window dimensions
-            // If in fullscreen, window.innerWidth/Height will be screen dimensions
             camera.aspect = window.innerWidth / (window.innerHeight - (isGameActive ? 60 : 0)); // Adjust for UI height if game is active
             camera.updateProjectionMatrix();
             renderer.setSize(window.innerWidth, window.innerHeight - (isGameActive ? 60 : 0));
@@ -796,12 +883,10 @@
 
         function onKeyDown(event) {
             keys[event.code] = true;
-            // console.log(`Key Down: ${event.code}`);
         }
 
         function onKeyUp(event) {
             keys[event.code] = false;
-            // console.log(`Key Up: ${event.code}`);
         }
 
         function drawBoundaries() {
@@ -889,10 +974,48 @@
             console.log(`Spawned ${type} power-up at X:${position.x.toFixed(2)}, Y:${position.y.toFixed(2)}, Z:${position.z.toFixed(2)}`);
         }
 
+        /**
+         * Gets a bullet mesh from the pool or creates a new one if the pool is empty.
+         * @param {boolean} isPlayerBullet - True if it's a player bullet, false for enemy.
+         * @returns {THREE.Mesh} The bullet mesh.
+         */
+        function getBulletMesh(isPlayerBullet) {
+            let bullet;
+            if (bulletPool.length > 0) {
+                bullet = bulletPool.pop();
+                bullet.visible = true;
+                console.log("Reusing bullet from pool. Pool size:", bulletPool.length);
+            } else {
+                const geometry = new THREE.SphereGeometry(0.3, 8, 8);
+                const material = new THREE.MeshBasicMaterial();
+                bullet = new THREE.Mesh(geometry, material);
+                console.log("Creating new bullet. Pool size:", bulletPool.length);
+            }
+            // Set material color based on bullet type
+            bullet.material.color.setHex(isPlayerBullet ? 0x00ffff : 0xffff00);
+            return bullet;
+        }
+
+        /**
+         * Returns a bullet mesh to the pool and hides it.
+         * @param {THREE.Mesh} bullet - The bullet mesh to dispose.
+         */
+        function disposeBulletMesh(bullet) {
+            scene.remove(bullet); // Remove from scene
+            bullet.visible = false; // Hide it
+            if (bulletPool.length < MAX_BULLETS_IN_POOL) {
+                bulletPool.push(bullet); // Add back to pool if not full
+                console.log("Bullet returned to pool. Pool size:", bulletPool.length);
+            } else {
+                // If pool is full, dispose of geometry and material to free memory
+                if (bullet.geometry) bullet.geometry.dispose();
+                if (bullet.material) bullet.material.dispose();
+                console.log("Bullet disposed (pool full).");
+            }
+        }
+
         function shootBullet(origin, target, isPlayerBullet) {
-            const geometry = new THREE.SphereGeometry(0.3, 8, 8);
-            const material = new THREE.MeshBasicMaterial({ color: isPlayerBullet ? 0x00ffff : 0xffff00 }); // Player bullets cyan, enemy yellow
-            const bullet = new THREE.Mesh(geometry, material);
+            const bullet = getBulletMesh(isPlayerBullet);
             bullet.position.copy(origin);
 
             const direction = new THREE.Vector3().subVectors(target, origin).normalize();
@@ -1048,7 +1171,7 @@
                     if (bullet.position.distanceTo(enemies[j].mesh.position) < 2) {
                         enemies[j].health -= bullet.userData.damage;
                         spawnDamageNumber(bullet.userData.damage, enemies[j].mesh.position);
-                        scene.remove(bullet);
+                        disposeBulletMesh(bullet); // Return bullet to pool
                         playerBullets.splice(i, 1);
                         hitEnemy = true;
                         console.log(`Player bullet hit enemy. Enemy health: ${enemies[j].health}`);
@@ -1065,7 +1188,7 @@
                     if (obstacleBox.intersectsSphere(bulletSphere)) {
                         obstacles[j].health -= bullet.userData.damage; // Bullets damage obstacles
                         spawnDamageNumber(bullet.userData.damage, obstacles[j].mesh.position);
-                        scene.remove(bullet);
+                        disposeBulletMesh(bullet); // Return bullet to pool
                         playerBullets.splice(i, 1);
                         hitObstacle = true;
                         console.log(`Player bullet hit obstacle. Obstacle health: ${obstacles[j].health}`);
@@ -1076,7 +1199,7 @@
 
                 // Remove if out of bounds
                 if (bullet.position.length() > WORLD_BOUNDARY * 1.5) {
-                    scene.remove(bullet);
+                    disposeBulletMesh(bullet); // Return bullet to pool
                     playerBullets.splice(i, 1);
                 }
             }
@@ -1101,7 +1224,7 @@
                     } else {
                         console.log("Enemy bullet hit player, but shield is active!");
                     }
-                    scene.remove(bullet);
+                    disposeBulletMesh(bullet); // Return bullet to pool
                     enemyBullets.splice(i, 1);
                     continue;
                 }
@@ -1114,7 +1237,7 @@
                     if (obstacleBox.intersectsSphere(bulletSphere)) {
                         obstacles[j].health -= bullet.userData.damage; // Bullets damage obstacles
                         spawnDamageNumber(bullet.userData.damage, obstacles[j].mesh.position);
-                        scene.remove(bullet);
+                        disposeBulletMesh(bullet); // Return bullet to pool
                         enemyBullets.splice(i, 1);
                         hitObstacle = true;
                         console.log(`Enemy bullet hit obstacle. Obstacle health: ${obstacles[j].health}`);
@@ -1125,7 +1248,7 @@
 
                 // Remove if out of bounds
                 if (bullet.position.length() > WORLD_BOUNDARY * 1.5) {
-                    scene.remove(bullet);
+                    disposeBulletMesh(bullet); // Return bullet to pool
                     enemyBullets.splice(i, 1);
                 }
             }
