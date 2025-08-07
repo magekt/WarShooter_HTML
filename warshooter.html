@@ -449,7 +449,8 @@
         const playerShootCooldown = 0.2;
 
         let enemySpawnTimer = 0;
-        const enemySpawnInterval = 5;
+        // Reverted to original spawn rate (less frequent)
+        const enemySpawnInterval = 5; 
 
         let scoreMultiplierActive = false;
         let scoreMultiplierEndTime = 0;
@@ -549,6 +550,16 @@
             const playerBody = new THREE.Mesh(playerBodyGeometry, playerBodyMaterial);
             playerBody.position.y = 0.75; // Half of height to sit on ground
 
+            // Tracks
+            const trackGeometry = new THREE.BoxGeometry(0.5, 1.5, 4.2); // Thin, long boxes for tracks
+            const trackMaterial = new THREE.MeshPhongMaterial({ color: 0x333333 });
+            const leftTrack = new THREE.Mesh(trackGeometry, trackMaterial);
+            leftTrack.position.set(-1.75, 0.75, 0); // Position left of body
+            const rightTrack = new THREE.Mesh(trackGeometry, trackMaterial);
+            rightTrack.position.set(1.75, 0.75, 0); // Position right of body
+            playerBody.add(leftTrack);
+            playerBody.add(rightTrack);
+
             const playerTurretGeometry = new THREE.CylinderGeometry(0.8, 1.2, 1.5, 8); // Turret base (wider at bottom)
             const playerTurretMaterial = new THREE.MeshPhongMaterial({ color: 0x0088ff });
             const playerTurret = new THREE.Mesh(playerTurretGeometry, playerTurretMaterial);
@@ -558,12 +569,13 @@
             const playerBarrelMaterial = new THREE.MeshPhongMaterial({ color: 0x555555 });
             const playerBarrel = new THREE.Mesh(playerBarrelGeometry, playerBarrelMaterial);
             playerBarrel.rotation.x = Math.PI / 2; // Point barrel forward
-            playerBarrel.position.set(0, 1.5, -1.5); // Position in front of turret
+            playerBarrel.position.set(0, 0, -1.5); // Position in front of turret, relative to turret
+
+            playerTurret.add(playerBarrel); // Barrel is part of the turret
 
             playerMesh = new THREE.Group();
             playerMesh.add(playerBody);
-            playerMesh.add(playerTurret);
-            playerMesh.add(playerBarrel);
+            playerMesh.add(playerTurret); // Turret is added directly to playerMesh
             playerMesh.position.set(0, 0, 0); // Group position
             scene.add(playerMesh);
 
@@ -1002,8 +1014,11 @@
         }
 
         function spawnObstacle(position, width, height, depth) {
+            // Randomize obstacle shape slightly
+            const isCube = Math.random() > 0.5;
+            const geometry = isCube ? new THREE.BoxGeometry(width, height, depth) : new THREE.DodecahedronGeometry(width / 2); // Dodecahedron for variety
             const mesh = new THREE.Mesh(
-                new THREE.BoxGeometry(width, height, depth),
+                geometry,
                 new THREE.MeshPhongMaterial({ color: OBSTACLE_COLOR })
             );
             mesh.position.copy(position);
@@ -1028,10 +1043,21 @@
         }
 
         function spawnEnemy(position, isBoss = false) {
-            const mesh = new THREE.Mesh(
-                new THREE.BoxGeometry(2, 2, 2),
-                new THREE.MeshPhongMaterial({ color: ENEMY_COLOR })
-            );
+            // Enemy Model - More angular with a glowing eye
+            const enemyBodyGeometry = new THREE.OctahedronGeometry(2); // Angular body
+            const enemyBodyMaterial = new THREE.MeshPhongMaterial({ color: ENEMY_COLOR });
+            const enemyBody = new THREE.Mesh(enemyBodyGeometry, enemyBodyMaterial);
+            enemyBody.position.y = 1;
+
+            const enemyEyeGeometry = new THREE.SphereGeometry(0.5, 8, 8);
+            // Changed to just color for MeshBasicMaterial to avoid warning
+            const enemyEyeMaterial = new THREE.MeshBasicMaterial({ color: 0x00ff00 }); // Green glowing eye
+            const enemyEye = new THREE.Mesh(enemyEyeGeometry, enemyEyeMaterial);
+            enemyEye.position.set(0, 0, -1.5); // Position in front of the body
+            enemyBody.add(enemyEye);
+
+            const mesh = new THREE.Group();
+            mesh.add(enemyBody);
             mesh.position.copy(position);
             mesh.userData.isBoss = isBoss;
             scene.add(mesh);
@@ -1091,13 +1117,15 @@
                 bullet.visible = true;
                 console.log("Reusing bullet from pool. Pool size:", bulletPool.length);
             } else {
-                const geometry = new THREE.SphereGeometry(0.3, 8, 8);
-                const material = new THREE.MeshBasicMaterial();
+                const geometry = new THREE.SphereGeometry(0.5, 8, 8); // Slightly larger bullet
+                // Changed to MeshPhongMaterial to support emissive
+                const material = new THREE.MeshPhongMaterial({ blending: THREE.AdditiveBlending }); 
                 bullet = new THREE.Mesh(geometry, material);
                 console.log("Creating new bullet. Pool size:", bulletPool.length);
             }
             // Set material color based on bullet type
             bullet.material.color.setHex(isPlayerBullet ? 0x00ffff : 0xffff00);
+            bullet.material.emissive.setHex(isPlayerBullet ? 0x00ffff : 0xffff00); // Emissive for glow
             return bullet;
         }
 
@@ -1216,6 +1244,7 @@
             // Player turret rotation to face mouse/target (simplified for now, or based on movement direction)
             // For a more advanced game, you'd calculate this based on mouse position or target.
             // For now, let's make it rotate slightly based on horizontal movement
+            // playerMesh.children[1] is the turret
             if (keys['KeyA']) {
                 playerMesh.children[1].rotation.y = -Math.PI / 8; // Rotate turret left
             } else if (keys['KeyD']) {
@@ -1266,7 +1295,10 @@
                     const targets = sortedEnemies.slice(0, MULTI_TARGET_COUNT);
                     if (targets.length > 0) {
                         targets.forEach(enemy => {
-                            shootBullet(playerMesh.position, enemy.mesh.position, true);
+                            // Shoot from the barrel's position
+                            const barrelWorldPos = new THREE.Vector3();
+                            playerMesh.children[1].children[0].getWorldPosition(barrelWorldPos); // Get barrel's world position
+                            shootBullet(barrelWorldPos, enemy.mesh.position, true);
                         });
                         lastPlayerShotTime = performance.now() / 1000;
                     }
@@ -1283,7 +1315,10 @@
                     });
 
                     if (closestEnemy) {
-                        shootBullet(playerMesh.position, closestEnemy.mesh.position, true);
+                        // Shoot from the barrel's position
+                        const barrelWorldPos = new THREE.Vector3();
+                        playerMesh.children[1].children[0].getWorldPosition(barrelWorldPos); // Get barrel's world position
+                        shootBullet(barrelWorldPos, closestEnemy.mesh.position, true);
                         lastPlayerShotTime = performance.now() / 1000;
                     }
                 }
@@ -1559,14 +1594,17 @@
         }
 
         function spawnExplosion(position) {
-            const numParticles = 20;
+            const numParticles = 30; // More particles
             const particleGeometry = new THREE.SphereGeometry(0.5, 8, 8);
-            const particleMaterial = new THREE.MeshBasicMaterial({ color: 0xffa500, transparent: true, opacity: 1 });
+            const baseColor = new THREE.Color(0xffa500); // Orange base color
 
             for (let i = 0; i < numParticles; i++) {
-                const particle = new THREE.Mesh(particleGeometry, particleMaterial.clone());
+                // Vary particle color slightly
+                const color = baseColor.clone().multiplyScalar(Math.random() * 0.5 + 0.5); // Randomize brightness
+                const particleMaterial = new THREE.MeshBasicMaterial({ color: color, transparent: true, opacity: 1 });
+                const particle = new THREE.Mesh(particleGeometry, particleMaterial);
                 particle.position.copy(position);
-                const speed = Math.random() * 5 + 2;
+                const speed = Math.random() * 7 + 3; // Faster, more varied speed
                 const angleX = Math.random() * Math.PI * 2;
                 const angleY = Math.random() * Math.PI * 2;
                 particle.userData.direction = new THREE.Vector3(
@@ -1576,6 +1614,7 @@
                 ).normalize();
                 particle.userData.speed = speed;
                 particle.userData.lifetime = 1.0;
+                particle.scale.setScalar(Math.random() * 1.5 + 0.5); // Vary particle size
                 explosionParticles.push(particle);
                 scene.add(particle);
             }
@@ -1655,18 +1694,18 @@
             // Spawn particles in a much larger area beyond the game world
             // Ensure particles are well outside the WORLD_BOUNDARY
             const worldSize = WORLD_BOUNDARY - WORLD_MIN; // 200 units
-            const buffer = worldSize * 1.5; // Buffer around the world
+            const buffer = worldSize * 2; // Increased buffer for more distant feel
             const minCoord = WORLD_MIN - buffer;
             const maxCoord = WORLD_BOUNDARY + buffer;
 
             for (let i = 0; i < PARTICLE_COUNT; i++) {
                 const x = Math.random() * (maxCoord - minCoord) + minCoord;
-                const y = Math.random() * 200 - 100; // Spread vertically
+                const y = Math.random() * 300 - 150; // More vertical spread
                 const z = Math.random() * (maxCoord - minCoord) + minCoord;
                 positions.push(x, y, z);
 
-                // Assign a subtle color, e.g., dark blue/purple
-                color.setHSL(Math.random() * 0.1 + 0.6, 0.5, Math.random() * 0.3 + 0.2); // Blue-ish to purplish hues
+                // Assign a subtle color, e.g., dark blue/purple, more varied
+                color.setHSL(Math.random() * 0.2 + 0.55, 0.6, Math.random() * 0.4 + 0.1); // Blue-ish to purplish hues, wider brightness
                 colors.push(color.r, color.g, color.b);
             }
 
@@ -1674,7 +1713,7 @@
             particleGeometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
 
             const particleMaterial = new THREE.PointsMaterial({
-                size: 2,
+                size: 2.5, // Slightly larger particles
                 vertexColors: true,
                 transparent: true,
                 opacity: 0.8,
@@ -1700,8 +1739,8 @@
 
                     // If a particle moves past the camera's front view, reset it to the far end
                     // Ensure it resets far enough back to avoid popping into view
-                    if (positions[i + 2] > camera.position.z + 50) { // If it passes a certain point in front of camera
-                        positions[i + 2] = camera.position.z - 400; // Reset far behind camera
+                    if (positions[i + 2] > camera.position.z + 100) { // If it passes a certain point in front of camera (increased distance)
+                        positions[i + 2] = camera.position.z - 500; // Reset far behind camera (increased distance)
                     }
                 }
                 backgroundParticles.geometry.attributes.position.needsUpdate = true;
