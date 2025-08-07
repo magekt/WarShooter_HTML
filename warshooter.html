@@ -449,8 +449,9 @@
         const playerShootCooldown = 0.2;
 
         let enemySpawnTimer = 0;
-        // Reverted to original spawn rate (less frequent)
-        const enemySpawnInterval = 5; 
+        // To reduce spawn rate by 89%, the interval should be original_interval / (1 - 0.89)
+        // So, 5 / 0.11 = ~45.45 seconds.
+        const enemySpawnInterval = 45.45; 
 
         let scoreMultiplierActive = false;
         let scoreMultiplierEndTime = 0;
@@ -546,13 +547,23 @@
 
             // Player Model - More creative tank-like model
             const playerBodyGeometry = new THREE.BoxGeometry(3, 1.5, 4); // Main body (wider, lower)
-            const playerBodyMaterial = new THREE.MeshPhongMaterial({ color: PLAYER_COLOR });
+            const playerBodyMaterial = new THREE.MeshPhongMaterial({ color: PLAYER_COLOR, shininess: 80 });
             const playerBody = new THREE.Mesh(playerBodyGeometry, playerBodyMaterial);
             playerBody.position.y = 0.75; // Half of height to sit on ground
 
+            // Side armor plates
+            const armorPlateGeometry = new THREE.BoxGeometry(0.5, 1.2, 3.5);
+            const armorPlateMaterial = new THREE.MeshPhongMaterial({ color: 0x0044bb, shininess: 60 }); // Darker blue
+            const leftArmor = new THREE.Mesh(armorPlateGeometry, armorPlateMaterial);
+            leftArmor.position.set(-1.8, 0.75, 0);
+            playerBody.add(leftArmor);
+            const rightArmor = new THREE.Mesh(armorPlateGeometry, armorPlateMaterial);
+            rightArmor.position.set(1.8, 0.75, 0);
+            playerBody.add(rightArmor);
+
             // Tracks
             const trackGeometry = new THREE.BoxGeometry(0.5, 1.5, 4.2); // Thin, long boxes for tracks
-            const trackMaterial = new THREE.MeshPhongMaterial({ color: 0x333333 });
+            const trackMaterial = new THREE.MeshPhongMaterial({ color: 0x333333, shininess: 30 });
             const leftTrack = new THREE.Mesh(trackGeometry, trackMaterial);
             leftTrack.position.set(-1.75, 0.75, 0); // Position left of body
             const rightTrack = new THREE.Mesh(trackGeometry, trackMaterial);
@@ -560,22 +571,29 @@
             playerBody.add(leftTrack);
             playerBody.add(rightTrack);
 
-            const playerTurretGeometry = new THREE.CylinderGeometry(0.8, 1.2, 1.5, 8); // Turret base (wider at bottom)
-            const playerTurretMaterial = new THREE.MeshPhongMaterial({ color: 0x0088ff });
-            const playerTurret = new THREE.Mesh(playerTurretGeometry, playerTurretMaterial);
-            playerTurret.position.y = 1.5; // On top of the body
+            // Turret Base
+            const playerTurretBaseGeometry = new THREE.CylinderGeometry(0.8, 1.2, 0.8, 8); // Wider, shorter base
+            const playerTurretBaseMaterial = new THREE.MeshPhongMaterial({ color: 0x0088ff, shininess: 80 });
+            const playerTurretBase = new THREE.Mesh(playerTurretBaseGeometry, playerTurretBaseMaterial);
+            playerTurretBase.position.y = 1.5;
+
+            // Turret Top
+            const playerTurretTopGeometry = new THREE.CylinderGeometry(0.6, 0.8, 0.7, 8); // Narrower, taller top
+            const playerTurretTopMaterial = new THREE.MeshPhongMaterial({ color: 0x0088ff, shininess: 80 });
+            const playerTurretTop = new THREE.Mesh(playerTurretTopGeometry, playerTurretTopMaterial);
+            playerTurretTop.position.y = 0.75; // On top of the base
+            playerTurretBase.add(playerTurretTop);
 
             const playerBarrelGeometry = new THREE.CylinderGeometry(0.3, 0.3, 3, 8); // Barrel
-            const playerBarrelMaterial = new THREE.MeshPhongMaterial({ color: 0x555555 });
+            const playerBarrelMaterial = new THREE.MeshPhongMaterial({ color: 0x555555, shininess: 50 });
             const playerBarrel = new THREE.Mesh(playerBarrelGeometry, playerBarrelMaterial);
             playerBarrel.rotation.x = Math.PI / 2; // Point barrel forward
-            playerBarrel.position.set(0, 0, -1.5); // Position in front of turret, relative to turret
-
-            playerTurret.add(playerBarrel); // Barrel is part of the turret
+            playerBarrel.position.set(0, 0, -1.5); // Position in front of turret top
+            playerTurretTop.add(playerBarrel); // Barrel is part of the turret top
 
             playerMesh = new THREE.Group();
             playerMesh.add(playerBody);
-            playerMesh.add(playerTurret); // Turret is added directly to playerMesh
+            playerMesh.add(playerTurretBase); // Turret base is added directly to playerMesh
             playerMesh.position.set(0, 0, 0); // Group position
             scene.add(playerMesh);
 
@@ -809,7 +827,7 @@
                 playerInvincible = false;
                 playerShieldMesh.visible = false;
                 console.log("Initial shield deactivated.");
-                showDramaMessage("Shield Expired!", 1500 / 2); // Halved duration
+                showDramaMessage("Shield Expired!", 500 / 2); // Reduced duration
             }, 5000); // Invincibility for 5 seconds
 
             playerDamageMultiplier = 1;
@@ -837,7 +855,7 @@
             currentWave = 0;
             startNextWave(); // Start the first wave
 
-            showDramaMessage("War Zone: Engage!", 2000 / 2); // Halved duration
+            showDramaMessage("War Zone: Engage!", 2000 / 2); // Kept longer for impact
             isGameActive = true;
             isGamePaused = false; // Ensure game is not paused on reset
             pauseButton.textContent = "Pause"; // Reset button text
@@ -854,14 +872,14 @@
             // Full health recovery at the start of each wave
             playerHealth = 100;
             updateUI();
-            showDramaMessage("Health Fully Restored!", 1000 / 2); // Halved duration
+            showDramaMessage("Health Fully Restored!", 500 / 2); // Reduced duration
 
             const wave = WAVE_CONFIG[currentWave - 1];
             enemiesInCurrentWave = wave.numEnemies;
             enemiesRemainingInWave = wave.numEnemies;
             enemySpawnTimer = 0; // Reset timer for wave-based spawning
 
-            showDramaMessage(`Wave ${currentWave} Incoming!`, 2000 / 2); // Halved duration
+            showDramaMessage(`Wave ${currentWave} Incoming!`, 2000 / 2); // Kept longer for impact
 
             // Remove old dynamic zones and spawn new ones for the new wave
             if (greenZoneMesh) { scene.remove(greenZoneMesh.mesh); greenZoneMesh = null; }
@@ -885,7 +903,7 @@
         function gameOver() {
             console.log(`Game Over! Final Score: ${playerScore}`);
             isGameActive = false;
-            showDramaMessage("GAME OVER! Score: " + playerScore, 5000 / 2); // Halved duration
+            showDramaMessage("GAME OVER! Score: " + playerScore, 5000 / 2); // Kept longer for impact
             // Hide game elements and show home screen after game over
             document.getElementById('gameUI').style.display = 'none';
             document.getElementById('mobileControls').style.display = 'none';
@@ -902,7 +920,7 @@
         function victory() {
             console.log(`Victory! Final Score: ${playerScore}`);
             isGameActive = false;
-            showDramaMessage("VICTORY! Score: " + playerScore, 5000 / 2); // Halved duration
+            showDramaMessage("VICTORY! Score: " + playerScore, 5000 / 2); // Kept longer for impact
             // Hide game elements and show home screen after victory
             document.getElementById('gameUI').style.display = 'none';
             document.getElementById('mobileControls').style.display = 'none';
@@ -1043,25 +1061,49 @@
         }
 
         function spawnEnemy(position, isBoss = false) {
-            // Enemy Model - More angular with a glowing eye
-            const enemyBodyGeometry = new THREE.OctahedronGeometry(2); // Angular body
-            const enemyBodyMaterial = new THREE.MeshPhongMaterial({ color: ENEMY_COLOR });
+            // Enemy Model - More angular with a glowing eye and spikes
+            const enemyGroup = new THREE.Group();
+
+            const enemyBodyGeometry = new THREE.OctahedronGeometry(2); // Main angular body
+            const enemyBodyMaterial = new THREE.MeshPhongMaterial({ color: ENEMY_COLOR, shininess: 70 });
             const enemyBody = new THREE.Mesh(enemyBodyGeometry, enemyBodyMaterial);
             enemyBody.position.y = 1;
+            enemyGroup.add(enemyBody);
+
+            // Spikes (4 cones)
+            const spikeGeometry = new THREE.ConeGeometry(0.5, 2, 4); // Base radius, height, radial segments
+            const spikeMaterial = new THREE.MeshPhongMaterial({ color: 0x880000, shininess: 50 }); // Darker red
+            
+            const spike1 = new THREE.Mesh(spikeGeometry, spikeMaterial);
+            spike1.rotation.z = Math.PI / 2;
+            spike1.position.set(1.5, 1, 0); // Right
+            enemyGroup.add(spike1);
+
+            const spike2 = new THREE.Mesh(spikeGeometry, spikeMaterial);
+            spike2.rotation.z = -Math.PI / 2;
+            spike2.position.set(-1.5, 1, 0); // Left
+            enemyGroup.add(spike2);
+
+            const spike3 = new THREE.Mesh(spikeGeometry, spikeMaterial);
+            spike3.rotation.x = Math.PI / 2;
+            spike3.position.set(0, 1, 1.5); // Back
+            enemyGroup.add(spike3);
+
+            const spike4 = new THREE.Mesh(spikeGeometry, spikeMaterial);
+            spike4.rotation.x = -Math.PI / 2;
+            spike4.position.set(0, 1, -1.5); // Front
+            enemyGroup.add(spike4);
 
             const enemyEyeGeometry = new THREE.SphereGeometry(0.5, 8, 8);
-            // Changed to just color for MeshBasicMaterial to avoid warning
-            const enemyEyeMaterial = new THREE.MeshBasicMaterial({ color: 0x00ff00 }); // Green glowing eye
+            const enemyEyeMaterial = new THREE.MeshBasicMaterial({ color: 0x00ff00, emissive: 0x00ff00, emissiveIntensity: 1.5 }); // Stronger green glow
             const enemyEye = new THREE.Mesh(enemyEyeGeometry, enemyEyeMaterial);
-            enemyEye.position.set(0, 0, -1.5); // Position in front of the body
-            enemyBody.add(enemyEye);
+            enemyEye.position.set(0, 1, -2.5); // Position in front of the body, further out
+            enemyGroup.add(enemyEye);
 
-            const mesh = new THREE.Group();
-            mesh.add(enemyBody);
-            mesh.position.copy(position);
-            mesh.userData.isBoss = isBoss;
-            scene.add(mesh);
-            enemies.push({ mesh: mesh, health: isBoss ? 200 : 100, lastShotTime: performance.now() / 1000 });
+            enemyGroup.position.copy(position);
+            enemyGroup.userData.isBoss = isBoss;
+            scene.add(enemyGroup); // Add the group to the scene
+            enemies.push({ mesh: enemyGroup, health: isBoss ? 200 : 100, lastShotTime: performance.now() / 1000 });
             console.log(`Spawned ${isBoss ? 'Boss' : 'Enemy'} at X:${position.x.toFixed(2)}, Y:${position.y.toFixed(2)}, Z:${position.z.toFixed(2)}`);
         }
 
@@ -1171,7 +1213,7 @@
             const currentTime = performance.now() / 1000;
             if (currentTime - lastSpecialAttackTime < SPECIAL_ATTACK_COOLDOWN) {
                 console.log("Special attack on cooldown.");
-                showDramaMessage(`Special Attack Cooldown: ${Math.ceil(SPECIAL_ATTACK_COOLDOWN - (currentTime - lastSpecialAttackTime))}s`, 1000 / 2); // Halved duration
+                showDramaMessage(`Special Attack Cooldown: ${Math.ceil(SPECIAL_ATTACK_COOLDOWN - (currentTime - lastSpecialAttackTime))}s`, 500 / 2); // Reduced duration
                 return;
             }
 
@@ -1179,7 +1221,7 @@
             if (Tone.context && Tone.context.state === 'running') { // Check Tone.context exists and is running
                 specialAttackSound.triggerAttackRelease("C4", "1n"); // A long, impactful sound
             }
-            showDramaMessage("Special Attack!", 1500 / 2); // Halved duration
+            showDramaMessage("Special Attack!", 500 / 2); // Reduced duration
             lastSpecialAttackTime = currentTime;
 
             const attackRadius = 30; // Radius of the special attack
@@ -1245,12 +1287,14 @@
             // For a more advanced game, you'd calculate this based on mouse position or target.
             // For now, let's make it rotate slightly based on horizontal movement
             // playerMesh.children[1] is the turret
+            // playerMesh.children[1] is playerTurretBase, its child is playerTurretTop, its child is playerBarrel
+            const playerTurretTop = playerMesh.children[1].children[0];
             if (keys['KeyA']) {
-                playerMesh.children[1].rotation.y = -Math.PI / 8; // Rotate turret left
+                playerTurretTop.rotation.y = -Math.PI / 8; // Rotate turret left
             } else if (keys['KeyD']) {
-                playerMesh.children[1].rotation.y = Math.PI / 8; // Rotate turret right
+                playerTurretTop.rotation.y = Math.PI / 8; // Rotate turret right
             } else {
-                playerMesh.children[1].rotation.y = 0; // Reset turret
+                playerTurretTop.rotation.y = 0; // Reset turret
             }
 
 
@@ -1266,21 +1310,21 @@
                 if (!isMultiTargetActive) {
                     isMultiTargetActive = true;
                     multiTargetEndTime = currentTime + MULTI_TARGET_DURATION;
-                    showDramaMessage("Multi-Target Active!", 1500 / 2); // Halved duration
+                    showDramaMessage("Multi-Target Active!", 500 / 2); // Reduced duration
                     console.log("Multi-target activated.");
                 }
             } else {
                 // If player leaves the zone, deactivate immediately if active
                 if (isMultiTargetActive && currentTime > multiTargetEndTime) {
                     isMultiTargetActive = false;
-                    showDramaMessage("Multi-Target Expired!", 1500 / 2); // Halved duration
+                    showDramaMessage("Multi-Target Expired!", 500 / 2); // Reduced duration
                     console.log("Multi-target deactivated.");
                 }
             }
             // Ensure multi-target deactivates if time runs out even if player is still in zone
             if (isMultiTargetActive && currentTime > multiTargetEndTime) {
                 isMultiTargetActive = false;
-                showDramaMessage("Multi-Target Expired!", 1500 / 2); // Halved duration
+                showDramaMessage("Multi-Target Expired!", 500 / 2); // Reduced duration
                 console.log("Multi-target deactivated.");
             }
 
@@ -1297,7 +1341,8 @@
                         targets.forEach(enemy => {
                             // Shoot from the barrel's position
                             const barrelWorldPos = new THREE.Vector3();
-                            playerMesh.children[1].children[0].getWorldPosition(barrelWorldPos); // Get barrel's world position
+                            // Get barrel's world position (playerMesh -> playerTurretBase -> playerTurretTop -> playerBarrel)
+                            playerMesh.children[1].children[0].children[0].getWorldPosition(barrelWorldPos);
                             shootBullet(barrelWorldPos, enemy.mesh.position, true);
                         });
                         lastPlayerShotTime = performance.now() / 1000;
@@ -1317,7 +1362,8 @@
                     if (closestEnemy) {
                         // Shoot from the barrel's position
                         const barrelWorldPos = new THREE.Vector3();
-                        playerMesh.children[1].children[0].getWorldPosition(barrelWorldPos); // Get barrel's world position
+                        // Get barrel's world position (playerMesh -> playerTurretBase -> playerTurretTop -> playerBarrel)
+                        playerMesh.children[1].children[0].children[0].getWorldPosition(barrelWorldPos);
                         shootBullet(barrelWorldPos, closestEnemy.mesh.position, true);
                         lastPlayerShotTime = performance.now() / 1000;
                     }
@@ -1344,17 +1390,17 @@
             // Update power-up durations
             if (scoreMultiplierActive && currentTime > scoreMultiplierEndTime) {
                 scoreMultiplierActive = false;
-                showDramaMessage("Score Multiplier Expired!", 1500 / 2); // Halved duration
+                showDramaMessage("Score Multiplier Expired!", 500 / 2); // Reduced duration
                 console.log("Score multiplier deactivated.");
             }
             if (playerDamageMultiplier > 1 && currentTime > damageMultiplierEndTime) {
                 playerDamageMultiplier = 1;
-                showDramaMessage("Damage Boost Expired!", 1500 / 2); // Halved duration
+                showDramaMessage("Damage Boost Expired!", 500 / 2); // Reduced duration
                 console.log("Damage boost deactivated.");
             }
             if (playerSpeedMultiplier > 1 && currentTime > speedMultiplierEndTime) {
                 playerSpeedMultiplier = 1;
-                showDramaMessage("Speed Boost Expired!", 1500 / 2); // Halved duration
+                showDramaMessage("Speed Boost Expired!", 500 / 2); // Reduced duration
                 console.log("Speed boost deactivated.");
             }
         }
@@ -1463,6 +1509,9 @@
                     enemy.mesh.position.addScaledVector(direction, 5 * delta);
                 }
 
+                // Enemy rotation (added for visual flair)
+                enemy.mesh.rotation.y += 0.5 * delta; // Rotate around its Y-axis
+
                 // Enemy shooting
                 if (playerMesh && performance.now() / 1000 - enemy.lastShotTime > ENEMY_SHOOT_INTERVAL && enemy.mesh.position.distanceTo(playerMesh.position) < 50) {
                     shootBullet(enemy.mesh.position, playerMesh.position, false);
@@ -1535,23 +1584,23 @@
                                 playerInvincible = false;
                                 console.log("Shield deactivated.");
                             }, 5000);
-                            showDramaMessage("Shield Activated!", 1500 / 2); // Halved duration
+                            showDramaMessage("Shield Activated!", 500 / 2); // Reduced duration
                             break;
                         case 'health':
                             playerHealth = Math.min(100, playerHealth + 25);
                             updateUI();
-                            showDramaMessage("Health Restored!", 1500 / 2); // Halved duration
+                            showDramaMessage("Health Restored!", 500 / 2); // Reduced duration
                             break;
                         case 'healthPack': // New: HP Pack
                             playerHealth = Math.min(100, playerHealth + 50); // Restore more health
                             updateUI();
-                            showDramaMessage("HP Pack Collected! +50 Health!", 1500 / 2); // Halved duration
+                            showDramaMessage("HP Pack Collected! +50 Health!", 500 / 2); // Reduced duration
                             // Respawn health pack after a delay
                             setTimeout(() => spawnRandomPowerUp('healthPack'), HEALTH_PACK_RESPAWN_TIME * 1000);
                             break;
                         case 'nukePack': // New: Nuke Pack
                             console.log("Nuke Pack Collected! Detonating all enemies.");
-                            showDramaMessage("NUKE! All Enemies Eliminated!", 2000 / 2); // Halved duration
+                            showDramaMessage("NUKE! All Enemies Eliminated!", 2000 / 2); // Kept longer for impact
                             enemies.forEach(enemy => {
                                 spawnExplosion(enemy.mesh.position);
                                 let scoreEarned = enemy.mesh.userData.isBoss ? 500 : 100;
@@ -1574,17 +1623,17 @@
                         case 'scoreMultiplier':
                             scoreMultiplierActive = true;
                             scoreMultiplierEndTime = currentTime + SCORE_MULTIPLIER_DURATION;
-                            showDramaMessage("Score Multiplier Active!", 1500 / 2); // Halved duration
+                            showDramaMessage("Score Multiplier Active!", 500 / 2); // Reduced duration
                             break;
                         case 'damageBoost':
                             playerDamageMultiplier = 2; // Double damage
                             damageMultiplierEndTime = currentTime + DAMAGE_SPEED_BOOST_DURATION;
-                            showDramaMessage("Damage Boost Active!", 1500 / 2); // Halved duration
+                            showDramaMessage("Damage Boost Active!", 500 / 2); // Reduced duration
                             break;
                         case 'speedBoost':
                             playerSpeedMultiplier = 2; // Double speed
                             speedMultiplierEndTime = currentTime + DAMAGE_SPEED_BOOST_DURATION;
-                            showDramaMessage("Speed Boost Active!", 1500 / 2); // Halved duration
+                            showDramaMessage("Speed Boost Active!", 500 / 2); // Reduced duration
                             break;
                     }
                     scene.remove(pu);
