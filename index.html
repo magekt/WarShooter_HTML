@@ -398,9 +398,9 @@
         const PLAYER_COLOR = 0x0000ff;
         const ENEMY_COLOR = 0xff0000;
         const OBSTACLE_COLOR = 0x444444;
-        const FRIENDLY_ZONE_COLOR = 0x0000ff;
-        const ENEMY_ZONE_COLOR = 0x00ff00;
-        const HAZARD_ZONE_COLOR = 0xff0000;
+        const FRIENDLY_ZONE_COLOR = 0x00ff00; // Green for friendly
+        const ENEMY_ZONE_COLOR = 0x0000ff; // Blue for multi-target
+        const HAZARD_ZONE_COLOR = 0xff0000; // Red for hazard
         const ENEMY_SHOOT_INTERVAL = 1.5; // seconds
         const HAZARD_DAMAGE_RATE = 5; // Damage per second in hazard zone
         const SPECIAL_ATTACK_COOLDOWN = 10; // seconds
@@ -408,6 +408,9 @@
         const PARTICLE_COUNT = 2000; // Number of background particles
         const PARTICLE_SPEED = 0.5; // Speed of background particles
         const HEALTH_PACK_RESPAWN_TIME = 15; // seconds
+        const HEALTH_RECOVERY_RATE = 10; // Health per second in green zone
+        const MULTI_TARGET_DURATION = 5; // seconds for blue zone effect
+        const MULTI_TARGET_COUNT = 3; // Number of enemies to target in blue zone
 
         // --- Three.js Scene Setup ---
         let scene, camera, renderer, clock;
@@ -431,6 +434,11 @@
         let hazardZoneCenter = new THREE.Vector3();
         let hazardZoneRadius = 15;
         let backgroundParticles; // Reference to the background particle system
+
+        let greenZoneMesh = null; // Reference to the green zone mesh
+        let blueZoneMesh = null; // Reference to the blue zone mesh
+        let isMultiTargetActive = false; // State for blue zone effect
+        let multiTargetEndTime = 0; // End time for blue zone effect
 
         let playerHealth = 100;
         let playerScore = 0;
@@ -531,19 +539,30 @@
             ground.rotation.x = -Math.PI / 2;
             scene.add(ground);
 
-            // Create boundaries
+            // Create boundaries (includes fixed hazard zone)
             drawBoundaries();
 
-            // Player
-            playerMesh = new THREE.Mesh(
-                new THREE.BoxGeometry(2, 2, 2),
-                new THREE.MeshPhongMaterial({ color: PLAYER_COLOR })
-            );
-            playerMesh.position.set(0, 1, 0);
+            // Player Model
+            const playerBodyGeometry = new THREE.ConeGeometry(2, 4, 8); // Base of the tank
+            const playerBodyMaterial = new THREE.MeshPhongMaterial({ color: PLAYER_COLOR });
+            const playerBody = new THREE.Mesh(playerBodyGeometry, playerBodyMaterial);
+            playerBody.rotation.x = Math.PI / 2; // Point cone forward
+            playerBody.position.y = 1; // Sit on the ground
+
+            const playerTurretGeometry = new THREE.CylinderGeometry(0.8, 0.8, 2, 8); // Turret
+            const playerTurretMaterial = new THREE.MeshPhongMaterial({ color: 0x0088ff }); // Slightly different blue
+            const playerTurret = new THREE.Mesh(playerTurretGeometry, playerTurretMaterial);
+            playerTurret.position.y = 2.5; // On top of the body
+            playerTurret.rotation.x = Math.PI / 2; // Point turret forward
+
+            playerMesh = new THREE.Group();
+            playerMesh.add(playerBody);
+            playerMesh.add(playerTurret);
+            playerMesh.position.set(0, 0, 0); // Group position
             scene.add(playerMesh);
 
-            // Shield visual for player
-            const shieldGeometry = new THREE.SphereGeometry(2.5, 16, 16);
+            // Shield visual for player (attach to the group)
+            const shieldGeometry = new THREE.SphereGeometry(3, 16, 16); // Slightly larger for the group
             const shieldMaterial = new THREE.MeshBasicMaterial({ color: 0x00ffff, opacity: 0.3, transparent: true, blending: THREE.AdditiveBlending });
             playerShieldMesh = new THREE.Mesh(shieldGeometry, shieldMaterial);
             playerMesh.add(playerShieldMesh);
@@ -760,10 +779,9 @@
             explosionParticles = [];
             damageNumbers = [];
 
-            if (hazardZoneMesh) {
-                scene.remove(hazardZoneMesh);
-                hazardZoneMesh = null;
-            }
+            // Remove dynamic zones from previous game if they exist
+            if (greenZoneMesh) { scene.remove(greenZoneMesh.mesh); greenZoneMesh = null; }
+            if (blueZoneMesh) { scene.remove(blueZoneMesh.mesh); blueZoneMesh = null; }
 
             playerHealth = 100;
             playerScore = 0;
@@ -783,9 +801,10 @@
             damageMultiplierEndTime = 0;
             speedMultiplierEndTime = 0;
             lastSpecialAttackTime = -SPECIAL_ATTACK_COOLDOWN; // Special attack ready at start
+            isMultiTargetActive = false; // Reset multi-target state
 
             updateUI();
-            playerMesh.position.set(0, 1, 0);
+            playerMesh.position.set(0, 0, 0); // Reset player position for the new model
 
             // Spawn initial obstacles (more varied sizes)
             spawnObstacle(new THREE.Vector3(-30, 2, 0), 5, 4, 5);
@@ -793,10 +812,6 @@
             spawnObstacle(new THREE.Vector3(0, 2, -30), 4, 5, 4);
             spawnObstacle(new THREE.Vector3(0, 2, 30), 7, 2, 7);
             spawnObstacle(new THREE.Vector3(-45, 2, 45), 3, 6, 3);
-
-
-            // Spawn initial hazard zone
-            spawnHazardZone(new THREE.Vector3(0, 0.1, 0));
 
             // Spawn one health pack at the start
             spawnRandomPowerUp('healthPack');
@@ -818,12 +833,23 @@
                 return;
             }
 
+            // Full health recovery at the start of each wave
+            playerHealth = 100;
+            updateUI();
+            showDramaMessage("Health Fully Restored!", 1000 / 2); // Halved duration
+
             const wave = WAVE_CONFIG[currentWave - 1];
             enemiesInCurrentWave = wave.numEnemies;
             enemiesRemainingInWave = wave.numEnemies;
             enemySpawnTimer = 0; // Reset timer for wave-based spawning
 
             showDramaMessage(`Wave ${currentWave} Incoming!`, 2000 / 2); // Halved duration
+
+            // Remove old dynamic zones and spawn new ones for the new wave
+            if (greenZoneMesh) { scene.remove(greenZoneMesh.mesh); greenZoneMesh = null; }
+            if (blueZoneMesh) { scene.remove(blueZoneMesh.mesh); blueZoneMesh = null; }
+            spawnRandomZone('friendly'); // Spawn new green zone
+            spawnRandomZone('enemy');    // Spawn new blue zone
 
             // Spawn initial enemies for the wave
             for (let i = 0; i < Math.min(3, enemiesInCurrentWave); i++) { // Spawn a few at the start
@@ -908,17 +934,65 @@
             const line = new THREE.Line(geometry, material);
             scene.add(line);
 
-            createZone(new THREE.Vector3(-60, 0.1, 0), 20, FRIENDLY_ZONE_COLOR);
-            createZone(new THREE.Vector3(60, 0.1, 0), 20, ENEMY_ZONE_COLOR);
+            // Red zone is fixed in the middle and spawned only once here
+            spawnFixedHazardZone(new THREE.Vector3(0, 0.1, 0));
         }
 
-        function createZone(center, radius, color) {
-            const geometry = new THREE.CircleGeometry(radius, 32);
-            const material = new THREE.MeshBasicMaterial({ color: color, opacity: 0.2, transparent: true, side: THREE.DoubleSide });
+        /**
+         * Spawns the fixed hazard zone in the middle of the map.
+         * @param {THREE.Vector3} position - The position to spawn the hazard zone.
+         */
+        function spawnFixedHazardZone(position) {
+            if (hazardZoneMesh) {
+                scene.remove(hazardZoneMesh); // Remove existing one if resetting
+            }
+            hazardZoneCenter.copy(position);
+            const geometry = new THREE.CircleGeometry(hazardZoneRadius, 32);
+            const material = new THREE.MeshBasicMaterial({ color: HAZARD_ZONE_COLOR, opacity: 0.4, transparent: true, side: THREE.DoubleSide });
             const circle = new THREE.Mesh(geometry, material);
             circle.rotation.x = -Math.PI / 2;
-            circle.position.copy(center);
+            circle.position.copy(hazardZoneCenter);
             scene.add(circle);
+            hazardZoneMesh = circle;
+            console.log(`Fixed Hazard zone spawned at X:${position.x.toFixed(2)}, Z:${position.z.toFixed(2)} with radius ${hazardZoneRadius}`);
+        }
+
+        /**
+         * Spawns a dynamic zone (friendly or enemy) at a random location.
+         * @param {string} type - 'friendly' for green (health), 'enemy' for blue (multi-target).
+         */
+        function spawnRandomZone(type) {
+            // Keep zones away from edges and center to avoid overlap with fixed hazard zone
+            const zoneSpawnPadding = 40;
+            const spawnRange = (WORLD_BOUNDARY - WORLD_MIN) - (zoneSpawnPadding * 2);
+            const spawnX = Math.random() * spawnRange + WORLD_MIN + zoneSpawnPadding;
+            const spawnZ = Math.random() * spawnRange + WORLD_MIN + zoneSpawnPadding;
+            const position = new THREE.Vector3(spawnX, 0.1, spawnZ);
+            const radius = 20;
+
+            let color;
+            let mesh;
+            if (type === 'friendly') {
+                color = FRIENDLY_ZONE_COLOR; // Green
+                const geometry = new THREE.CircleGeometry(radius, 32);
+                const material = new THREE.MeshBasicMaterial({ color: color, opacity: 0.2, transparent: true, side: THREE.DoubleSide });
+                mesh = new THREE.Mesh(geometry, material);
+                mesh.rotation.x = -Math.PI / 2;
+                mesh.position.copy(position);
+                scene.add(mesh);
+                greenZoneMesh = { mesh: mesh, position: position, radius: radius };
+                console.log(`Green zone spawned at X:${position.x.toFixed(2)}, Z:${position.z.toFixed(2)}`);
+            } else if (type === 'enemy') {
+                color = ENEMY_ZONE_COLOR; // Blue
+                const geometry = new THREE.CircleGeometry(radius, 32);
+                const material = new THREE.MeshBasicMaterial({ color: color, opacity: 0.2, transparent: true, side: THREE.DoubleSide });
+                mesh = new THREE.Mesh(geometry, material);
+                mesh.rotation.x = -Math.PI / 2;
+                mesh.position.copy(position);
+                scene.add(mesh);
+                blueZoneMesh = { mesh: mesh, position: position, radius: radius };
+                console.log(`Blue zone spawned at X:${position.x.toFixed(2)}, Z:${position.z.toFixed(2)}`);
+            }
         }
 
         function spawnObstacle(position, width, height, depth) {
@@ -1130,21 +1204,82 @@
             playerMesh.position.x = Math.max(WORLD_MIN, Math.min(WORLD_BOUNDARY, playerMesh.position.x));
             playerMesh.position.z = Math.max(WORLD_MIN, Math.min(WORLD_BOUNDARY, playerMesh.position.z));
 
+            // Player bobbing animation
+            playerMesh.position.y = 1 + Math.sin(performance.now() * 0.005) * 0.2; // Subtle bobbing
+
+            // Player turret rotation to face mouse/target (simplified for now, or based on movement direction)
+            // For a more advanced game, you'd calculate this based on mouse position or target.
+            // For now, let's make it rotate slightly based on horizontal movement
+            if (keys['KeyA']) {
+                playerMesh.children[1].rotation.y = -Math.PI / 8; // Rotate turret left
+            } else if (keys['KeyD']) {
+                playerMesh.children[1].rotation.y = Math.PI / 8; // Rotate turret right
+            } else {
+                playerMesh.children[1].rotation.y = 0; // Reset turret
+            }
+
+
+            // Apply green zone health recovery
+            if (greenZoneMesh && playerMesh.position.distanceTo(greenZoneMesh.position) < greenZoneMesh.radius) {
+                playerHealth = Math.min(100, playerHealth + HEALTH_RECOVERY_RATE * delta);
+                updateUI();
+            }
+
+            // Apply blue zone multi-target effect
+            const currentTime = performance.now() / 1000;
+            if (blueZoneMesh && playerMesh.position.distanceTo(blueZoneMesh.position) < blueZoneMesh.radius) {
+                if (!isMultiTargetActive) {
+                    isMultiTargetActive = true;
+                    multiTargetEndTime = currentTime + MULTI_TARGET_DURATION;
+                    showDramaMessage("Multi-Target Active!", 1500 / 2); // Halved duration
+                    console.log("Multi-target activated.");
+                }
+            } else {
+                // If player leaves the zone, deactivate immediately if active
+                if (isMultiTargetActive && currentTime > multiTargetEndTime) {
+                    isMultiTargetActive = false;
+                    showDramaMessage("Multi-Target Expired!", 1500 / 2); // Halved duration
+                    console.log("Multi-target deactivated.");
+                }
+            }
+            // Ensure multi-target deactivates if time runs out even if player is still in zone
+            if (isMultiTargetActive && currentTime > multiTargetEndTime) {
+                isMultiTargetActive = false;
+                showDramaMessage("Multi-Target Expired!", 1500 / 2); // Halved duration
+                console.log("Multi-target deactivated.");
+            }
+
+
             // Player shooting
             if (keys['Space'] && performance.now() / 1000 - lastPlayerShotTime > playerShootCooldown) {
-                let closestEnemy = null;
-                let minDistance = Infinity;
-                enemies.forEach(enemy => {
-                    const distance = playerMesh.position.distanceTo(enemy.mesh.position);
-                    if (distance < minDistance) {
-                        minDistance = distance;
-                        closestEnemy = enemy;
+                if (isMultiTargetActive) {
+                    // Multi-target shooting
+                    const sortedEnemies = [...enemies].sort((a, b) =>
+                        playerMesh.position.distanceTo(a.mesh.position) - playerMesh.position.distanceTo(b.mesh.position)
+                    );
+                    const targets = sortedEnemies.slice(0, MULTI_TARGET_COUNT);
+                    if (targets.length > 0) {
+                        targets.forEach(enemy => {
+                            shootBullet(playerMesh.position, enemy.mesh.position, true);
+                        });
+                        lastPlayerShotTime = performance.now() / 1000;
                     }
-                });
+                } else {
+                    // Single target shooting
+                    let closestEnemy = null;
+                    let minDistance = Infinity;
+                    enemies.forEach(enemy => {
+                        const distance = playerMesh.position.distanceTo(enemy.mesh.position);
+                        if (distance < minDistance) {
+                            minDistance = distance;
+                            closestEnemy = enemy;
+                        }
+                    });
 
-                if (closestEnemy) {
-                    shootBullet(playerMesh.position, closestEnemy.mesh.position, true);
-                    lastPlayerShotTime = performance.now() / 1000;
+                    if (closestEnemy) {
+                        shootBullet(playerMesh.position, closestEnemy.mesh.position, true);
+                        lastPlayerShotTime = performance.now() / 1000;
+                    }
                 }
             }
 
@@ -1166,7 +1301,6 @@
             }
 
             // Update power-up durations
-            const currentTime = performance.now() / 1000;
             if (scoreMultiplierActive && currentTime > scoreMultiplierEndTime) {
                 scoreMultiplierActive = false;
                 showDramaMessage("Score Multiplier Expired!", 1500 / 2); // Halved duration
@@ -1492,21 +1626,6 @@
             console.log("Player took damage!");
         }
 
-        function spawnHazardZone(position) {
-            if (hazardZoneMesh) {
-                scene.remove(hazardZoneMesh);
-            }
-            hazardZoneCenter.copy(position);
-            const geometry = new THREE.CircleGeometry(hazardZoneRadius, 32);
-            const material = new THREE.MeshBasicMaterial({ color: HAZARD_ZONE_COLOR, opacity: 0.4, transparent: true, side: THREE.DoubleSide });
-            const circle = new THREE.Mesh(geometry, material);
-            circle.rotation.x = -Math.PI / 2;
-            circle.position.copy(hazardZoneCenter);
-            scene.add(circle);
-            hazardZoneMesh = circle; // Assign to hazardZoneMesh
-            console.log(`Hazard zone spawned at X:${position.x.toFixed(2)}, Z:${position.z.toFixed(2)} with radius ${hazardZoneRadius}`);
-        }
-
         function showDramaMessage(message, duration = 3000) {
             dramaOverlay.textContent = message;
             dramaOverlay.style.opacity = 1;
@@ -1527,14 +1646,16 @@
             const color = new THREE.Color();
 
             // Spawn particles in a much larger area beyond the game world
-            const spawnRange = WORLD_BOUNDARY * 5; // 5 times the world boundary for a vast background
-            const minSpawn = -spawnRange;
-            const maxSpawn = spawnRange;
+            // Ensure particles are well outside the WORLD_BOUNDARY
+            const worldSize = WORLD_BOUNDARY - WORLD_MIN; // 200 units
+            const buffer = worldSize * 1.5; // Buffer around the world
+            const minCoord = WORLD_MIN - buffer;
+            const maxCoord = WORLD_BOUNDARY + buffer;
 
             for (let i = 0; i < PARTICLE_COUNT; i++) {
-                const x = Math.random() * (maxSpawn - minSpawn) + minSpawn;
+                const x = Math.random() * (maxCoord - minCoord) + minCoord;
                 const y = Math.random() * 200 - 100; // Spread vertically
-                const z = Math.random() * (maxSpawn - minSpawn) + minSpawn;
+                const z = Math.random() * (maxCoord - minCoord) + minCoord;
                 positions.push(x, y, z);
 
                 // Assign a subtle color, e.g., dark blue/purple
