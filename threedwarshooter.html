@@ -99,7 +99,7 @@
     /* Kill Feed */
     #killFeed {
       position: fixed;
-      top: 100px;
+      top: 180px; /* Adjusted position to be below the HUD */
       left: 10px;
       z-index: 20;
       font-size: 0.8rem;
@@ -501,10 +501,11 @@
       BOSS_HEALTH: 400,
       COLLISION_RADIUS: 1.8,
       POWER_UP_SPAWN_INTERVAL: 8000,
-      ENEMY_WAVE_INTERVAL: 25000,
-      BOSS_SPAWN_INTERVAL: 60000,
+      ENEMY_WAVE_INTERVAL: 100000, // Increased from 25000 to 100000 (4 times larger)
+      BOSS_SPAWN_INTERVAL: 240000, // Increased from 60000 to 240000 (4 minutes)
       POWER_UP_DURATION: 8000,
-      HAZARD_DAMAGE_RATE: 8
+      HAZARD_DAMAGE_RATE: 8,
+      ENEMY_SPAWN_IN_WAVE_INTERVAL: 30000 // New: 30 seconds between individual enemy spawns in a wave
     };
 
     // ===================== Game State =====================
@@ -526,6 +527,8 @@
         this.lastBossSpawn = 0;
         this.comboMultiplier = 1;
         this.lastKillTime = 0;
+        this.pendingEnemies = []; // New: To hold enemies waiting to spawn within a wave
+        this.lastIndividualEnemySpawn = 0; // New: Timer for individual enemy spawns
       }
     }
 
@@ -1209,7 +1212,7 @@
        // Create audio elements with fallback
        this.sounds = {};
        this.createSound('shoot', 'data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdJivrJBhNjVgodDbq2EcBj+a2/LDciUFLIHO8tiJNwgZaLvt559NEAxQp+PwtmMcBjiR1/LMeSwFJHfH8N2QQAoUXrTp66hVFApGn+X0wl0bCjyR2/LNeSMGIHfH8N2QQAoUXrTp66hVFApGn+X0wl0bCjyR2/LNeSMGIHfH8N2QQAoUXrTp66hVFApGn+X0wl0bCjyR2/LNeSMGIHfH8N2QQAoUXrTp66hVFApGn+X0wl0bCjyR2/LNeSMGIHfH8N2QQAoUXrTp66hVFApGn+X0wl0bCjyR2/LNeSMGIHfH8N2QQAoUXrTp66hVFApGn+X0wl0bCg==');
-       this.createSound('explosion', 'data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdJivrJBhNjVgodDbq2EcBj+a2/LDciUFLIHO8tiJNwgZaLvt559NEAxQp+PwtmMcBjiR1/LMeSwFJHfH8N2QQAoUXrTp66hVFApGn+X0wl0bCjyR2/LNeSMGIHfH8N2QQAoUXrTp66hVFApGn+X0wl0bCjyR2/LNeSMGIHfH8N2QQAoUXrTp66hVFApGn+X0wl0bCjyR2/LNeSMGIHfH8N2QQAoUXrTp66hVFApGn+X0wl0bCjyR2/LNeSMGIHfH8N2QQAoUXrTp66hVFApGn+X0wl0bCjyR2/LNeSMGIHfH8N2QQAoUXrTp66hVFApGn+X0wl0bCg==');
+       this.createSound('explosion', 'data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdJivrJBhNjVgodDbq2EcBj+a2/LDciUFLIHO8tiJNwgZaLvt559NEAxQp+PwtmMcBjiR1/LMeSwFJHfH8N2QQAoUXrTp66hVFApGn+X0wl0bCjyR2/LNeSMGIHfH8N2QQAoUXrTp66hVFApGn+X0wl0bCjyR2/LNeSMGIHfH8N2QQAoUXrTp66hVFApGn+X0wl0bCjyR2/LNeSMGIHfH8N2QQAoUXrTp66hVFApGn+X0wl0bCjyR2/LNeSMGIHfH8N2QQAoUXrTp66hVFApGn+X0wl0bCjyR2/LNeSMGIHfH8N2QQAoUXrTp66hVFApGn+X0wl0bCjyR2/LNeSMGIHfH8N2QQAoUXrTp66hVFApGn+X0wl0bCg==');
        this.createSound('powerup', 'data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdJivrJBhNjVgodDbq2EcBj+a2/LDciUFLIHO8tiJNwgZaLvt559NEAxQp+PwtmMcBjiR1/LMeSwFJHfH8N2QQAoUXrTp66hVFApGn+X0wl0bCjyR2/LNeSMGIHfH8N2QQAoUXrTp66hVFApGn+X0wl0bCjyR2/LNeSMGIHfH8N2QQAoUXrTp66hVFApGn+X0wl0bCjyR2/LNeSMGIHfH8N2QQAoUXrTp66hVFApGn+X0wl0bCjyR2/LNeSMGIHfH8N2QQAoUXrTp66hVFApGn+X0wl0bCjyR2/LNeSMGIHfH8N2QQAoUXrTp66hVFApGn+X0wl0bCg==');
        this.createSound('gameover', 'data:audio/wav;base66,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdJivrJBhNjVgodDbq2EcBj+a2/LDciUFLIHO8tiJNwgZaLvt559NEAxQp+PwtmMcBjiR1/LMeSwFJHfH8N2QQAoUXrTp66hVFApGn+X0wl0bCjyR2/LNeSMGIHfH8N2QQAoUXrTp66hVFApGn+X0wl0bCjyR2/LNeSMGIHfH8N2QQAoUXrTp66hVFApGn+X0wl0bCjyR2/LNeSMGIHfH8N2QQAoUXrTp66hVFApGn+X0wl0bCjyR2/LNeSMGIHfH8N2QQAoUXrTp66hVFApGn+X0wl0bCg==');
      }
@@ -1328,8 +1331,10 @@
        player.lastShotTime = now;
        Utils.playSound(audioManager.shoot);
 
-       // Get bullet origin from camera position
-       const startPos = camera.position.clone();
+       // Get bullet origin from camera's world position
+       const startPos = new THREE.Vector3();
+       camera.getWorldPosition(startPos); // Get the camera's world position
+
        // Use targetDirection if provided, otherwise use camera's current direction
        const direction = targetDirection ? targetDirection.clone() : camera.getWorldDirection(new THREE.Vector3());
 
@@ -1554,7 +1559,8 @@
 
      update() {
        this.elements.score.textContent = gameState.score.toLocaleString();
-       this.elements.enemyCount.textContent = enemies.length;
+       // Update enemy count to include pending enemies in total count for UI
+       this.elements.enemyCount.textContent = enemies.length + gameState.pendingEnemies.length;
        this.elements.level.textContent = gameState.level;
        this.elements.timer.textContent = Utils.formatTime(gameState.totalTime);
        
@@ -1677,13 +1683,13 @@
          ctx.arc(enemyPos.x, enemyPos.y, enemy.type === 'boss' ? 8 : 4, 0, Math.PI * 2);
          ctx.fill();
        });
-       
-       // Draw power-ups
-       powerUpManager.powerUps.forEach(powerUp => {
-         const puPos = worldToMap(powerUp.position);
-         ctx.fillStyle = '#ffff00';
+
+       // Draw pending enemies (optional, but good for debugging/visibility)
+       gameState.pendingEnemies.forEach(enemy => {
+         const enemyPos = worldToMap(enemy.position);
+         ctx.fillStyle = 'rgba(255, 255, 0, 0.5)'; // Yellow for pending
          ctx.beginPath();
-         ctx.arc(puPos.x, puPos.y, 3, 0, Math.PI * 2);
+         ctx.arc(enemyPos.x, enemyPos.y, enemy.type === 'boss' ? 6 : 3, 0, Math.PI * 2);
          ctx.fill();
        });
      }
@@ -1796,6 +1802,7 @@
        // World boundaries
        this.createBoundaries();
        this.createSafeZones();
+       this.setupStarfield(); // Call the new starfield setup here
      }
 
      createBoundaries() {
@@ -1857,6 +1864,33 @@
        }
      }
 
+     setupStarfield() {
+        const numParticles = 2000; // Number of stars
+        const particleGeometry = new THREE.BufferGeometry();
+        const positions = new Float32Array(numParticles * 3);
+
+        for (let i = 0; i < numParticles; i++) {
+            // Distribute particles randomly across a large cube
+            positions[i * 3] = Utils.randomInRange(CONFIG.WORLD_MIN * 2, CONFIG.WORLD_BOUNDARY * 2); // X
+            positions[i * 3 + 1] = Utils.randomInRange(0, 200); // Y (higher for space)
+            positions[i * 3 + 2] = Utils.randomInRange(CONFIG.WORLD_MIN * 2, CONFIG.WORLD_BOUNDARY * 2); // Z
+        }
+
+        particleGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+
+        const particleMaterial = new THREE.PointsMaterial({
+            color: 0xffffff,
+            size: 0.5,
+            transparent: true,
+            opacity: 0.8,
+            blending: THREE.AdditiveBlending, // Makes particles brighter when overlapping
+            sizeAttenuation: true // Particles appear smaller when further away
+        });
+
+        particles = new THREE.Points(particleGeometry, particleMaterial);
+        scene.add(particles);
+     }
+
      setupEntities() {
        // Create player
        player = new Player();
@@ -1873,7 +1907,7 @@
        // Create initial obstacles
        this.generateObstacles();
        
-       // Spawn initial enemies
+       // Spawn initial enemies (first wave)
        this.spawnEnemyWave();
      }
 
@@ -1906,19 +1940,33 @@
          waveSize = Math.min(3 + Math.floor(gameState.level / 2), 8); // Original logic for subsequent levels
        }
        
+       // Add enemies to pending queue instead of spawning immediately
        for (let i = 0; i < waveSize; i++) {
          const enemy = new Enemy(Utils.getRandomPosition(60), 'normal');
-         enemies.push(enemy);
-         scene.add(enemy.mesh);
+         gameState.pendingEnemies.push(enemy);
        }
 
        // Occasionally spawn a boss (only from level 2 onwards)
        if (gameState.level > 1 && Math.random() < 0.3 + (gameState.level * 0.1)) {
          const boss = new Enemy(Utils.getRandomPosition(40), 'boss');
-         enemies.push(boss);
-         scene.add(boss.mesh);
-         ui.addKillFeed('👑 Boss enemy has appeared!');
+         gameState.pendingEnemies.push(boss); // Add boss to pending queue
+         ui.addKillFeed('👑 Boss enemy has appeared in the wave!'); // Announce boss arrival
        }
+
+       // Immediately spawn the first enemy of the wave
+       if (gameState.pendingEnemies.length > 0) {
+           this.spawnIndividualEnemy();
+           gameState.lastIndividualEnemySpawn = performance.now(); // Reset timer for next individual spawn
+       }
+     }
+
+     spawnIndividualEnemy() {
+         if (gameState.pendingEnemies.length > 0) {
+             const enemy = gameState.pendingEnemies.shift(); // Take one from the front
+             enemies.push(enemy);
+             scene.add(enemy.mesh);
+             ui.addKillFeed(`Enemy incoming!`); // Announce individual enemy spawn
+         }
      }
 
      setupManagers() {
@@ -1972,12 +2020,20 @@
        bulletManager.update(delta, enemies, player);
        powerUpManager.update(delta, player);
        effectsManager.update(delta);
+       this.updateStarfield(delta); // Update the starfield
 
-       // New: Auto-shoot nearest enemy
+       // Auto-shoot based on crosshair direction
        this.autoShootNearestEnemy(); 
 
        // Spawn management
        this.handleSpawning();
+
+       // Handle individual enemy spawning within a wave
+       const now = performance.now();
+       if (gameState.pendingEnemies.length > 0 && now - gameState.lastIndividualEnemySpawn > CONFIG.ENEMY_SPAWN_IN_WAVE_INTERVAL) {
+           this.spawnIndividualEnemy();
+           gameState.lastIndividualEnemySpawn = now;
+       }
 
        // Game state checks
        this.checkGameOver();
@@ -2043,14 +2099,12 @@
             }
         }
 
-        // If a nearest enemy is found within a certain range, shoot
+        // If a nearest enemy is found within a certain range, trigger a shot
         const autoShootRange = 70; // Adjust this range as needed
         if (nearestEnemy && minDistance <= autoShootRange) {
-            // Calculate the direction from the camera's world position to the nearest enemy
-            const directionToEnemy = new THREE.Vector3().subVectors(nearestEnemy.position, cameraWorldPos).normalize();
-            
-            // Pass the calculated direction to handleShoot, so the bullet goes towards the enemy
-            inputManager.handleShoot(directionToEnemy); 
+            // Trigger the shot. The bullet direction will now default to the camera's forward direction.
+            // No longer pass targetDirection, so handleShoot uses camera's current view.
+            inputManager.handleShoot(); 
         }
     }
 
@@ -2063,10 +2117,18 @@
          gameState.lastPowerUpSpawn = now;
        }
        
-       // Spawn enemy waves
-       if (now - gameState.lastEnemyWave > CONFIG.ENEMY_WAVE_INTERVAL) {
+       // Spawn new enemy waves (only if no active or pending enemies)
+       if (enemies.length === 0 && gameState.pendingEnemies.length === 0 && now - gameState.lastEnemyWave > CONFIG.ENEMY_WAVE_INTERVAL) {
          this.spawnEnemyWave();
          gameState.lastEnemyWave = now;
+       }
+
+       // Spawn boss if conditions met
+       if (gameState.level > 1 && now - gameState.lastBossSpawn > CONFIG.BOSS_SPAWN_INTERVAL) {
+           const boss = new Enemy(Utils.getRandomPosition(40), 'boss');
+           gameState.pendingEnemies.push(boss);
+           ui.addKillFeed('👑 A powerful Boss approaches!');
+           gameState.lastBossSpawn = now; // Reset boss spawn timer
        }
      }
 
@@ -2077,7 +2139,8 @@
      }
 
      checkLevelComplete() {
-       if (enemies.length === 0 && !gameState.gameOver) {
+       // Level is complete only when all active AND pending enemies are gone
+       if (enemies.length === 0 && gameState.pendingEnemies.length === 0 && !gameState.gameOver) {
          this.nextLevel();
        }
      }
@@ -2091,7 +2154,7 @@
        
        // Regenerate world
        this.generateObstacles();
-       this.spawnEnemyWave();
+       this.spawnEnemyWave(); // This will now populate pendingEnemies
        
        // Player benefits
        player.health = Math.min(player.maxHealth, player.health + 20);
@@ -2113,6 +2176,9 @@
        // Clear obstacles
        obstacles.forEach(obstacle => scene.remove(obstacle));
        obstacles.length = 0;
+
+       // Clear pending enemies
+       gameState.pendingEnemies.length = 0;
      }
 
      endGame(victory = false) {
@@ -2136,13 +2202,29 @@
        
        // Regenerate world
        this.generateObstacles();
-       this.spawnEnemyWave();
+       this.spawnEnemyWave(); // This will now populate pendingEnemies
        
        // Go back to the home screen
        ui.showHomeScreen(); 
      }
 
-     // Removed updateCamera as camera is now child of player and controlled by input
+     updateStarfield(delta) {
+        const speed = 20; // Speed of stars moving towards the player
+        const positions = particles.geometry.attributes.position.array;
+        const numParticles = positions.length / 3;
+
+        for (let i = 0; i < numParticles; i++) {
+            positions[i * 3 + 2] += speed * delta; // Move along positive Z-axis
+
+            // If particle moves beyond the "far" boundary, reset it to the "near" boundary
+            if (positions[i * 3 + 2] > CONFIG.WORLD_BOUNDARY * 2) {
+                positions[i * 3 + 2] = CONFIG.WORLD_MIN * 2; // Reset far back
+                positions[i * 3] = Utils.randomInRange(CONFIG.WORLD_MIN * 2, CONFIG.WORLD_BOUNDARY * 2); // Randomize X
+                positions[i * 3 + 1] = Utils.randomInRange(0, 200); // Randomize Y
+            }
+        }
+        particles.geometry.attributes.position.needsUpdate = true;
+     }
    }
 
    // ===================== Global Variables =====================
@@ -2151,6 +2233,7 @@
    let gameState;
    let bulletManager, effectsManager, powerUpManager, audioManager, inputManager, ui;
    let game;
+   let particles; // Global variable for the starfield particles
 
    // ===================== Initialize Game =====================
    window.addEventListener('load', () => {
