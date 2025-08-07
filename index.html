@@ -405,6 +405,9 @@
         const HAZARD_DAMAGE_RATE = 5; // Damage per second in hazard zone
         const SPECIAL_ATTACK_COOLDOWN = 10; // seconds
         const MAX_BULLETS_IN_POOL = 50; // Max bullets to keep in the pool
+        const PARTICLE_COUNT = 2000; // Number of background particles
+        const PARTICLE_SPEED = 0.5; // Speed of background particles
+        const HEALTH_PACK_RESPAWN_TIME = 15; // seconds
 
         // --- Three.js Scene Setup ---
         let scene, camera, renderer, clock;
@@ -427,6 +430,7 @@
         let hazardZoneMesh = null;
         let hazardZoneCenter = new THREE.Vector3();
         let hazardZoneRadius = 15;
+        let backgroundParticles; // Reference to the background particle system
 
         let playerHealth = 100;
         let playerScore = 0;
@@ -446,8 +450,6 @@
         let playerSpeedMultiplier = 1;
         let damageMultiplierEndTime = 0;
         let speedMultiplierEndTime = 0;
-        const DAMAGE_SPEED_BOOST_DURATION = 8; // seconds
-
         let lastSpecialAttackTime = -SPECIAL_ATTACK_COOLDOWN; // Allows immediate use at start
         let specialAttackReady = false;
 
@@ -545,6 +547,9 @@
             const shieldMaterial = new THREE.MeshBasicMaterial({ color: 0x00ffff, opacity: 0.3, transparent: true, blending: THREE.AdditiveBlending });
             playerShieldMesh = new THREE.Mesh(shieldGeometry, shieldMaterial);
             playerMesh.add(playerShieldMesh);
+
+            // Create particle background
+            createParticleBackground();
 
             // Event Listeners
             window.addEventListener('resize', onWindowResize, false);
@@ -688,12 +693,12 @@
                         resetGame(); // Reset and start the game after audio is ready
                     }).catch(e => {
                         console.error("Failed to start AudioContext on user gesture:", e);
-                        showDramaMessage("Audio failed to start. Please try refreshing.", 3000);
+                        showDramaMessage("Audio failed to start. Please try refreshing.", 3000 / 2); // Halved duration
                         resetGame(); // Still start the game even if audio fails
                     });
                 } catch (e) {
                     console.error("Error initializing Tone.js:", e);
-                    showDramaMessage("Error with audio system. Try refreshing.", 3000);
+                    showDramaMessage("Error with audio system. Try refreshing.", 3000 / 2); // Halved duration
                     resetGame(); // Still start the game
                 }
             } else {
@@ -768,7 +773,7 @@
                 playerInvincible = false;
                 playerShieldMesh.visible = false;
                 console.log("Initial shield deactivated.");
-                showDramaMessage("Shield Expired!", 1500);
+                showDramaMessage("Shield Expired!", 1500 / 2); // Halved duration
             }, 5000); // Invincibility for 5 seconds
 
             playerDamageMultiplier = 1;
@@ -793,10 +798,13 @@
             // Spawn initial hazard zone
             spawnHazardZone(new THREE.Vector3(0, 0.1, 0));
 
+            // Spawn one health pack at the start
+            spawnRandomPowerUp('healthPack');
+
             currentWave = 0;
             startNextWave(); // Start the first wave
 
-            showDramaMessage("War Zone: Engage!", 2000);
+            showDramaMessage("War Zone: Engage!", 2000 / 2); // Halved duration
             isGameActive = true;
             isGamePaused = false; // Ensure game is not paused on reset
             pauseButton.textContent = "Pause"; // Reset button text
@@ -815,27 +823,25 @@
             enemiesRemainingInWave = wave.numEnemies;
             enemySpawnTimer = 0; // Reset timer for wave-based spawning
 
-            showDramaMessage(`Wave ${currentWave} Incoming!`, 2000);
+            showDramaMessage(`Wave ${currentWave} Incoming!`, 2000 / 2); // Halved duration
 
             // Spawn initial enemies for the wave
             for (let i = 0; i < Math.min(3, enemiesInCurrentWave); i++) { // Spawn a few at the start
                 spawnRandomEnemy(wave.bossChance);
             }
 
-            // Spawn power-ups for the new wave
+            // Spawn power-ups for the new wave (excluding healthPack as it's handled separately)
             if (Math.random() < wave.powerUpChance) {
-                const powerUpTypes = ['health', 'shield', 'damageBoost', 'speedBoost', 'scoreMultiplier'];
+                const powerUpTypes = ['health', 'shield', 'damageBoost', 'speedBoost', 'scoreMultiplier', 'nukePack'];
                 const randomType = powerUpTypes[Math.floor(Math.random() * powerUpTypes.length)];
-                const spawnX = Math.random() * (WORLD_BOUNDARY - WORLD_MIN) + WORLD_MIN;
-                const spawnZ = Math.random() * (WORLD_BOUNDARY - WORLD_MIN) + WORLD_MIN;
-                spawnPowerUp(new THREE.Vector3(spawnX, 1, spawnZ), randomType);
+                spawnRandomPowerUp(randomType);
             }
         }
 
         function gameOver() {
             console.log(`Game Over! Final Score: ${playerScore}`);
             isGameActive = false;
-            showDramaMessage("GAME OVER! Score: " + playerScore, 5000);
+            showDramaMessage("GAME OVER! Score: " + playerScore, 5000 / 2); // Halved duration
             // Hide game elements and show home screen after game over
             document.getElementById('gameUI').style.display = 'none';
             document.getElementById('mobileControls').style.display = 'none';
@@ -846,13 +852,13 @@
             setTimeout(() => {
                 homeScreen.style.display = 'flex';
                 checkOrientation(); // Re-check orientation for home screen
-            }, 5000);
+            }, 2500); // Halved delay
         }
 
         function victory() {
             console.log(`Victory! Final Score: ${playerScore}`);
             isGameActive = false;
-            showDramaMessage("VICTORY! Score: " + playerScore, 5000);
+            showDramaMessage("VICTORY! Score: " + playerScore, 5000 / 2); // Halved duration
             // Hide game elements and show home screen after victory
             document.getElementById('gameUI').style.display = 'none';
             document.getElementById('mobileControls').style.display = 'none';
@@ -863,7 +869,7 @@
             setTimeout(() => {
                 homeScreen.style.display = 'flex';
                 checkOrientation(); // Re-check orientation for home screen
-            }, 5000);
+            }, 2500); // Halved delay
         }
 
         function updateUI() {
@@ -953,18 +959,26 @@
             console.log(`Spawned ${isBoss ? 'Boss' : 'Enemy'} at X:${position.x.toFixed(2)}, Y:${position.y.toFixed(2)}, Z:${position.z.toFixed(2)}`);
         }
 
+        /**
+         * Spawns a power-up at a given position and type.
+         * @param {THREE.Vector3} position - The position to spawn the power-up.
+         * @param {string} type - The type of power-up ('health', 'shield', etc.).
+         */
         function spawnPowerUp(position, type) {
             let color;
+            let shape;
             switch (type) {
-                case 'health': color = 0x00ff00; break;
-                case 'shield': color = 0x00ffff; break;
-                case 'damageBoost': color = 0xFFA500; break; // Orange for damage boost
-                case 'speedBoost': color = 0xFFFF00; break; // Yellow for speed boost
-                case 'scoreMultiplier': color = 0x8A2BE2; break; // Purple for score multiplier
-                default: color = 0xffffff;
+                case 'health': color = 0x00ff00; shape = new THREE.SphereGeometry(1, 12, 12); break;
+                case 'shield': color = 0x00ffff; shape = new THREE.SphereGeometry(1, 12, 12); break;
+                case 'damageBoost': color = 0xFFA500; shape = new THREE.SphereGeometry(1, 12, 12); break; // Orange for damage boost
+                case 'speedBoost': color = 0xFFFF00; shape = new THREE.SphereGeometry(1, 12, 12); break; // Yellow for speed boost
+                case 'scoreMultiplier': color = 0x8A2BE2; shape = new THREE.SphereGeometry(1, 12, 12); break; // Purple for score multiplier
+                case 'healthPack': color = 0x00ff00; shape = new THREE.BoxGeometry(1.5, 1.5, 1.5); break; // Green cube for HP pack
+                case 'nukePack': color = 0x800080; shape = new THREE.OctahedronGeometry(1.5); break; // Purple octahedron for Nuke pack
+                default: color = 0xffffff; shape = new THREE.SphereGeometry(1, 12, 12);
             }
             const mesh = new THREE.Mesh(
-                new THREE.SphereGeometry(1, 12, 12),
+                shape,
                 new THREE.MeshPhongMaterial({ color })
             );
             mesh.position.copy(position);
@@ -972,6 +986,17 @@
             powerUps.push(mesh);
             scene.add(mesh);
             console.log(`Spawned ${type} power-up at X:${position.x.toFixed(2)}, Y:${position.y.toFixed(2)}, Z:${position.z.toFixed(2)}`);
+        }
+
+        /**
+         * Spawns a power-up of a given type at a random position within the world boundaries.
+         * @param {string} type - The type of power-up to spawn.
+         */
+        function spawnRandomPowerUp(type) {
+            const spawnRange = WORLD_BOUNDARY - WORLD_MIN - 20; // Keep power-ups away from edges
+            const spawnX = Math.random() * spawnRange + WORLD_MIN + 10;
+            const spawnZ = Math.random() * spawnRange + WORLD_MIN + 10;
+            spawnPowerUp(new THREE.Vector3(spawnX, 1, spawnZ), type);
         }
 
         /**
@@ -1038,7 +1063,7 @@
             const currentTime = performance.now() / 1000;
             if (currentTime - lastSpecialAttackTime < SPECIAL_ATTACK_COOLDOWN) {
                 console.log("Special attack on cooldown.");
-                showDramaMessage(`Special Attack Cooldown: ${Math.ceil(SPECIAL_ATTACK_COOLDOWN - (currentTime - lastSpecialAttackTime))}s`, 1000);
+                showDramaMessage(`Special Attack Cooldown: ${Math.ceil(SPECIAL_ATTACK_COOLDOWN - (currentTime - lastSpecialAttackTime))}s`, 1000 / 2); // Halved duration
                 return;
             }
 
@@ -1046,7 +1071,7 @@
             if (Tone.context && Tone.context.state === 'running') { // Check Tone.context exists and is running
                 specialAttackSound.triggerAttackRelease("C4", "1n"); // A long, impactful sound
             }
-            showDramaMessage("Special Attack!", 1500);
+            showDramaMessage("Special Attack!", 1500 / 2); // Halved duration
             lastSpecialAttackTime = currentTime;
 
             const attackRadius = 30; // Radius of the special attack
@@ -1144,17 +1169,17 @@
             const currentTime = performance.now() / 1000;
             if (scoreMultiplierActive && currentTime > scoreMultiplierEndTime) {
                 scoreMultiplierActive = false;
-                showDramaMessage("Score Multiplier Expired!", 1500);
+                showDramaMessage("Score Multiplier Expired!", 1500 / 2); // Halved duration
                 console.log("Score multiplier deactivated.");
             }
             if (playerDamageMultiplier > 1 && currentTime > damageMultiplierEndTime) {
                 playerDamageMultiplier = 1;
-                showDramaMessage("Damage Boost Expired!", 1500);
+                showDramaMessage("Damage Boost Expired!", 1500 / 2); // Halved duration
                 console.log("Damage boost deactivated.");
             }
             if (playerSpeedMultiplier > 1 && currentTime > speedMultiplierEndTime) {
                 playerSpeedMultiplier = 1;
-                showDramaMessage("Speed Boost Expired!", 1500);
+                showDramaMessage("Speed Boost Expired!", 1500 / 2); // Halved duration
                 console.log("Speed boost deactivated.");
             }
         }
@@ -1334,27 +1359,56 @@
                                 playerInvincible = false;
                                 console.log("Shield deactivated.");
                             }, 5000);
-                            showDramaMessage("Shield Activated!", 1500);
+                            showDramaMessage("Shield Activated!", 1500 / 2); // Halved duration
                             break;
                         case 'health':
                             playerHealth = Math.min(100, playerHealth + 25);
                             updateUI();
-                            showDramaMessage("Health Restored!", 1500);
+                            showDramaMessage("Health Restored!", 1500 / 2); // Halved duration
+                            break;
+                        case 'healthPack': // New: HP Pack
+                            playerHealth = Math.min(100, playerHealth + 50); // Restore more health
+                            updateUI();
+                            showDramaMessage("HP Pack Collected! +50 Health!", 1500 / 2); // Halved duration
+                            // Respawn health pack after a delay
+                            setTimeout(() => spawnRandomPowerUp('healthPack'), HEALTH_PACK_RESPAWN_TIME * 1000);
+                            break;
+                        case 'nukePack': // New: Nuke Pack
+                            console.log("Nuke Pack Collected! Detonating all enemies.");
+                            showDramaMessage("NUKE! All Enemies Eliminated!", 2000 / 2); // Halved duration
+                            enemies.forEach(enemy => {
+                                spawnExplosion(enemy.mesh.position);
+                                let scoreEarned = enemy.mesh.userData.isBoss ? 500 : 100;
+                                if (scoreMultiplierActive) {
+                                    scoreEarned *= 2;
+                                }
+                                playerScore += scoreEarned;
+                                scene.remove(enemy.mesh);
+                                enemiesRemainingInWave--; // Decrement remaining enemies for wave progression
+                            });
+                            enemies = []; // Clear the enemies array
+                            updateUI();
+                            // If all enemies are cleared and it's not the final wave, start next wave
+                            if (enemiesRemainingInWave <= 0 && currentWave < WAVE_CONFIG.length) {
+                                startNextWave();
+                            } else if (enemiesRemainingInWave <= 0 && currentWave === WAVE_CONFIG.length) {
+                                victory();
+                            }
                             break;
                         case 'scoreMultiplier':
                             scoreMultiplierActive = true;
                             scoreMultiplierEndTime = currentTime + SCORE_MULTIPLIER_DURATION;
-                            showDramaMessage("Score Multiplier Active!", 1500);
+                            showDramaMessage("Score Multiplier Active!", 1500 / 2); // Halved duration
                             break;
                         case 'damageBoost':
                             playerDamageMultiplier = 2; // Double damage
                             damageMultiplierEndTime = currentTime + DAMAGE_SPEED_BOOST_DURATION;
-                            showDramaMessage("Damage Boost Active!", 1500);
+                            showDramaMessage("Damage Boost Active!", 1500 / 2); // Halved duration
                             break;
                         case 'speedBoost':
                             playerSpeedMultiplier = 2; // Double speed
                             speedMultiplierEndTime = currentTime + DAMAGE_SPEED_BOOST_DURATION;
-                            showDramaMessage("Speed Boost Active!", 1500);
+                            showDramaMessage("Speed Boost Active!", 1500 / 2); // Halved duration
                             break;
                     }
                     scene.remove(pu);
@@ -1463,6 +1517,69 @@
             }
         }
 
+        /**
+         * Creates a dynamic particle background for the scene.
+         */
+        function createParticleBackground() {
+            const particleGeometry = new THREE.BufferGeometry();
+            const positions = [];
+            const colors = [];
+            const color = new THREE.Color();
+
+            // Spawn particles in a much larger area beyond the game world
+            const spawnRange = WORLD_BOUNDARY * 5; // 5 times the world boundary for a vast background
+            const minSpawn = -spawnRange;
+            const maxSpawn = spawnRange;
+
+            for (let i = 0; i < PARTICLE_COUNT; i++) {
+                const x = Math.random() * (maxSpawn - minSpawn) + minSpawn;
+                const y = Math.random() * 200 - 100; // Spread vertically
+                const z = Math.random() * (maxSpawn - minSpawn) + minSpawn;
+                positions.push(x, y, z);
+
+                // Assign a subtle color, e.g., dark blue/purple
+                color.setHSL(Math.random() * 0.1 + 0.6, 0.5, Math.random() * 0.3 + 0.2); // Blue-ish to purplish hues
+                colors.push(color.r, color.g, color.b);
+            }
+
+            particleGeometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+            particleGeometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+
+            const particleMaterial = new THREE.PointsMaterial({
+                size: 2,
+                vertexColors: true,
+                transparent: true,
+                opacity: 0.8,
+                blending: THREE.AdditiveBlending,
+                sizeAttenuation: true
+            });
+
+            backgroundParticles = new THREE.Points(particleGeometry, particleMaterial);
+            scene.add(backgroundParticles);
+            console.log(`Created ${PARTICLE_COUNT} background particles.`);
+        }
+
+        /**
+         * Updates the position of the background particles to create a subtle movement effect.
+         * @param {number} delta - Time elapsed since last frame.
+         */
+        function updateParticleBackground(delta) {
+            if (backgroundParticles) {
+                const positions = backgroundParticles.geometry.attributes.position.array;
+                for (let i = 0; i < positions.length; i += 3) {
+                    // Move particles slowly towards the camera (negative Z)
+                    positions[i + 2] += PARTICLE_SPEED * delta;
+
+                    // If a particle moves past the camera's front view, reset it to the far end
+                    // Ensure it resets far enough back to avoid popping into view
+                    if (positions[i + 2] > camera.position.z + 50) { // If it passes a certain point in front of camera
+                        positions[i + 2] = camera.position.z - 400; // Reset far behind camera
+                    }
+                }
+                backgroundParticles.geometry.attributes.position.needsUpdate = true;
+            }
+        }
+
         // --- Main Animation Loop ---
         function animate() {
             requestAnimationFrame(animate);
@@ -1495,6 +1612,7 @@
                     camera.lookAt(playerMesh.position);
                 }
             }
+            updateParticleBackground(delta); // Update particles even if game is not active
             renderer.render(scene, camera);
         }
 
