@@ -475,14 +475,14 @@
 
                 Tone.Transport.start();
 
-                document.getElementById('loadingScreen').style.display = 'none';
+                loadingScreen.style.display = 'none';
                 // Show home screen after assets are loaded
                 homeScreen.style.display = 'flex';
                 checkOrientation(); // Check orientation on load
                 init(); // Call init after all global variables are set
             }).catch(e => {
                 console.error("Tone.js AudioContext failed to start:", e);
-                document.getElementById('loadingScreen').textContent = "Audio failed to initialize. Please ensure audio is allowed.";
+                loadingScreen.textContent = "Audio failed to initialize. Please ensure audio is allowed.";
             });
         }
 
@@ -580,6 +580,14 @@
 
         function startGame() {
             console.log("Start Game button clicked. Hiding home screen and starting game.");
+            // Resume Tone.js AudioContext after user gesture
+            if (Tone.context.state !== 'running') {
+                Tone.context.resume().then(() => {
+                    console.log("AudioContext resumed successfully.");
+                }).catch(e => {
+                    console.error("Failed to resume AudioContext:", e);
+                });
+            }
             homeScreen.style.display = 'none';
             document.getElementById('gameUI').style.display = 'flex';
             document.getElementById('mobileControls').style.display = 'flex';
