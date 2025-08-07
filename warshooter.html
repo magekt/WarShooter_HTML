@@ -1,60 +1,1750 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>HTML File Index</title>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>War Zone Tactical Shooter – Playable Game</title>
     <style>
         body {
-            font-family: Arial, sans-serif;
-            max-width: 800px;
-            margin: 0 auto;
-            padding: 20px;
+            margin: 0;
+            overflow: hidden;
+            background: #1a1a1a; /* Darker background for drama */
+            font-family: 'Inter', sans-serif; /* Using Inter font */
+            color: #fff;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: flex-start; /* Align to top for UI elements */
+            height: 100vh;
+            position: relative; /* For absolute positioning of controls */
         }
-        .file-list {
-            list-style-type: none;
-            padding: 0;
+        canvas {
+            display: block;
+            width: 100%;
+            height: calc(100vh - 60px); /* Adjust height for UI */
         }
-        .file-list li {
-            margin: 10px 0;
-            padding: 10px;
-            background-color: #f5f5f5;
+        #gameUI {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 60px; /* Height for UI elements */
+            background: rgba(0, 0, 0, 0.5);
+            display: flex;
+            justify-content: space-between; /* Changed to space-between for pause button */
+            align-items: center;
+            padding: 10px 20px;
+            box-sizing: border-box;
+            font-size: 1.2rem;
+            z-index: 50;
+            border-bottom-left-radius: 10px;
+            border-bottom-right-radius: 10px;
+        }
+        #healthBar {
+            width: 200px;
+            height: 20px;
+            background: #555;
+            border-radius: 5px;
+            overflow: hidden;
+            border: 1px solid #fff;
+        }
+        #healthFill {
+            height: 100%;
+            width: 100%; /* Will be updated by JS */
+            background: linear-gradient(to right, #00ff00, #ff0000);
+            transition: width 0.2s ease-out;
             border-radius: 5px;
         }
-        .file-list a {
-            text-decoration: none;
-            color: #0066cc;
-            font-weight: bold;
+        #dramaOverlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column; /* Allow multiple lines for messages */
+            justify-content: center;
+            align-items: center;
+            background: rgba(0, 0, 0, 0.7);
+            color: #fff;
+            font-size: 2.5rem;
+            text-align: center;
+            z-index: 100;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 1s ease-in-out;
+            border-radius: 10px; /* Rounded corners */
         }
-        .file-list a:hover {
-            text-decoration: underline;
+        #damageFlash {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(255, 0, 0, 0.4);
+            opacity: 0;
+            pointer-events: none;
+            z-index: 40;
+            transition: opacity 0.1s ease-out;
+            border-radius: 10px; /* Rounded corners */
+        }
+        .loading-screen {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: #000;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            color: #fff;
+            font-size: 2rem;
+            z-index: 101;
+        }
+
+        /* Mobile Controls Styling */
+        #mobileControls {
+            position: absolute;
+            bottom: 10px;
+            width: 100%;
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-end;
+            padding: 0 10px;
+            box-sizing: border-box;
+            z-index: 60;
+        }
+
+        #dPad {
+            display: grid;
+            grid-template-columns: repeat(3, 60px); /* Increased size */
+            grid-template-rows: repeat(3, 60px);    /* Increased size */
+            gap: 8px; /* Increased gap */
+            background: rgba(50, 50, 50, 0.7);
+            border-radius: 20px; /* More rounded */
+            padding: 15px; /* Increased padding */
+        }
+
+        .dPadButton {
+            width: 60px; /* Increased size */
+            height: 60px; /* Increased size */
+            background: #333;
+            border: 2px solid #555;
+            border-radius: 12px; /* More rounded */
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 1.8rem; /* Larger font */
+            color: #eee;
+            user-select: none;
+            -webkit-user-select: none;
+            -moz-user-select: none;
+            touch-action: manipulation;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3); /* Added shadow */
+            transition: background 0.1s ease, box-shadow 0.1s ease;
+        }
+        .dPadButton:active {
+            background: #555;
+            border-color: #777;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.5); /* Pressed state shadow */
+        }
+
+        #upButton { grid-area: 1 / 2 / 2 / 3; }
+        #leftButton { grid-area: 2 / 1 / 3 / 2; }
+        #downButton { grid-area: 3 / 2 / 4 / 3; }
+        #rightButton { grid-area: 2 / 3 / 3 / 4; }
+        /* Center button is empty */
+
+        #actionButtons {
+            display: flex;
+            flex-direction: column;
+            gap: 15px; /* Increased gap */
+        }
+
+        .actionButton {
+            width: 90px; /* Increased size */
+            height: 90px; /* Increased size */
+            background: #007bff;
+            border: 2px solid #0056b3;
+            border-radius: 50%; /* Circular buttons */
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 1.2rem; /* Larger font */
+            font-weight: bold;
+            color: #fff;
+            user-select: none;
+            -webkit-user-select: none;
+            -moz-user-select: none;
+            touch-action: manipulation;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+            transition: background 0.1s ease, box-shadow 0.1s ease;
+        }
+        .actionButton:active {
+            background: #0056b3;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
+        }
+        #specialAttackButton {
+            background: #dc3545; /* Red for special attack */
+            border-color: #b02a37;
+        }
+        #specialAttackButton:active {
+            background: #b02a37;
+        }
+
+        /* Pause Button Styling */
+        #pauseButton {
+            background: #6c757d; /* Grey for pause */
+            border: 2px solid #5a6268;
+            border-radius: 8px;
+            color: white;
+            padding: 8px 15px;
+            font-size: 1rem;
+            cursor: pointer;
+            user-select: none;
+            -webkit-user-select: none;
+            -moz-user-select: none;
+            touch-action: manipulation;
+            transition: background 0.1s ease, box-shadow 0.1s ease;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+        }
+        #pauseButton:active {
+            background: #5a6268;
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+        }
+
+        /* Home Screen Styling */
+        #homeScreen {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: #0d0d0d; /* Very dark background */
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 102; /* Above loading screen */
+            color: #fff;
+            text-align: center;
+        }
+
+        #homeScreen h1 {
+            font-size: 4rem;
+            margin-bottom: 20px;
+            color: #00ffff; /* Cyan title */
+            text-shadow: 0 0 10px rgba(0, 255, 255, 0.7);
+        }
+
+        #startButton {
+            padding: 15px 40px;
+            font-size: 1.8rem;
+            background: linear-gradient(45deg, #007bff, #00c6ff);
+            border: none;
+            border-radius: 15px;
+            color: white;
+            cursor: pointer;
+            box-shadow: 0 8px 15px rgba(0, 123, 255, 0.4);
+            transition: all 0.3s ease;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+        }
+
+        #startButton:hover {
+            background: linear-gradient(45deg, #0056b3, #0099cc);
+            box-shadow: 0 12px 20px rgba(0, 123, 255, 0.6);
+            transform: translateY(-3px);
+        }
+
+        #startButton:active {
+            transform: translateY(1px);
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+        }
+
+        /* Volume Control Styling */
+        #volumeControl {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-left: 20px; /* Space from pause button */
+        }
+
+        #volumeControl label {
+            font-size: 1rem;
+        }
+
+        #volumeSlider {
+            width: 100px;
+            -webkit-appearance: none;
+            appearance: none;
+            height: 8px;
+            background: #555;
+            outline: none;
+            border-radius: 4px;
+            transition: background 0.2s ease;
+        }
+
+        #volumeSlider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 20px;
+            height: 20px;
+            background: #007bff;
+            border-radius: 50%;
+            cursor: pointer;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+        }
+
+        #volumeSlider::-moz-range-thumb {
+            width: 20px;
+            height: 20px;
+            background: #007bff;
+            border-radius: 50%;
+            cursor: pointer;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+        }
+
+        /* Landscape Mode Enforcement for Mobile */
+        @media screen and (orientation: portrait) and (max-width: 768px) {
+            #portraitMessage {
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                background: rgba(0, 0, 0, 0.9);
+                color: #fff;
+                display: flex;
+                flex-direction: column;
+                justify-content: center;
+                align-items: center;
+                font-size: 1.8rem;
+                text-align: center;
+                z-index: 103; /* Above all other elements */
+            }
+            #portraitMessage p {
+                margin: 20px;
+            }
+            #mobileControls, #gameUI, canvas {
+                display: none; /* Hide game elements in portrait */
+            }
+        }
+
+        @media screen and (orientation: landscape) and (max-width: 768px) {
+            #portraitMessage {
+                display: none; /* Hide message in landscape */
+            }
+            #mobileControls, #gameUI, canvas {
+                display: flex; /* Show game elements in landscape */
+            }
         }
     </style>
 </head>
 <body>
-    <h1>HTML Files in Root Directory</h1>
-    <ul class="file-list" id="fileList">
-        <!-- Files will be populated by JavaScript -->
-    </ul>
+    <div class="loading-screen" id="loadingScreen">Loading Game...</div>
 
+    <!-- Home Screen -->
+    <div id="homeScreen">
+        <h1>WAR ZONE TACTICAL SHOOTER</h1>
+        <button id="startButton">Start Game</button>
+    </div>
+
+    <!-- Portrait Message for Mobile -->
+    <div id="portraitMessage" style="display: none;">
+        <p>Please rotate your device to landscape mode for the best experience!</p>
+        <p>🎮</p>
+    </div>
+
+    <div id="gameUI" style="display: none;">
+        <button id="pauseButton">Pause</button> <!-- Pause Button -->
+        <div id="volumeControl">
+            <label for="volumeSlider">Volume:</label>
+            <input type="range" id="volumeSlider" min="0" max="1" step="0.05" value="0.5">
+        </div>
+        <div>Health: <div id="healthBar"><div id="healthFill"></div></div></div>
+        <div id="scoreDisplay">Score: 0</div>
+    </div>
+    <div id="dramaOverlay"></div>
+    <div id="damageFlash"></div>
+
+    <!-- Mobile Controls -->
+    <div id="mobileControls" style="display: none;">
+        <div id="dPad">
+            <div class="dPadButton" id="upButton" data-key="KeyW">▲</div>
+            <div class="dPadButton" id="leftButton" data-key="KeyA">◀</div>
+            <div class="dPadButton" id="downButton" data-key="KeyS">▼</div>
+            <div class="dPadButton" id="rightButton" data-key="KeyD">▶</div>
+        </div>
+        <div id="actionButtons">
+            <div class="actionButton" id="shootButton" data-key="Space">Shoot</div>
+            <div class="actionButton" id="specialAttackButton" data-key="KeyQ">Special</div>
+        </div>
+    </div>
+
+    <!-- Three.js Library -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <!-- Tone.js Library for audio -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.min.js"></script>
     <script>
-        // Static list of HTML files (update manually)
-        const htmlFiles = [
-            'warshooter.html',
-            'threedwarshooter.html',
-            // Add your HTML files here
+        // --- Global Constants ---
+        const WORLD_BOUNDARY = 100;
+        const WORLD_MIN = -100;
+        const PLAYER_BASE_SPEED = 15;
+        const BULLET_SPEED = 100;
+        const PLAYER_BASE_BULLET_DAMAGE = 30;
+        const ENEMY_BULLET_DAMAGE = 8; // Reduced enemy bullet damage
+        const PLAYER_COLOR = 0x0000ff;
+        const ENEMY_COLOR = 0xff0000;
+        const OBSTACLE_COLOR = 0x444444;
+        const FRIENDLY_ZONE_COLOR = 0x00ff00; // Green for friendly
+        const ENEMY_ZONE_COLOR = 0x0000ff; // Blue for multi-target
+        const HAZARD_ZONE_COLOR = 0xff0000; // Red for hazard
+        const ENEMY_SHOOT_INTERVAL = 1.5; // seconds
+        const HAZARD_DAMAGE_RATE = 5; // Damage per second in hazard zone
+        const SPECIAL_ATTACK_COOLDOWN = 10; // seconds
+        const MAX_BULLETS_IN_POOL = 50; // Max bullets to keep in the pool
+        const PARTICLE_COUNT = 2000; // Number of background particles
+        const PARTICLE_SPEED = 0.5; // Speed of background particles
+        const HEALTH_PACK_RESPAWN_TIME = 15; // seconds
+        const HEALTH_RECOVERY_RATE = 20; // Increased Health per second in green zone
+        const MULTI_TARGET_DURATION = 8; // Increased seconds for blue zone effect
+        const MULTI_TARGET_COUNT = 3; // Number of enemies to target in blue zone
+        const POWERUP_PICKUP_RADIUS = 5; // Increased radius for picking up power-ups
+
+        // --- Three.js Scene Setup ---
+        let scene, camera, renderer, clock;
+        let dramaOverlay, damageFlash, healthFill, scoreDisplay, pauseButton, volumeSlider;
+        let homeScreen, startButton, portraitMessage;
+        let cameraShakeIntensity = 0;
+        let cameraShakeTime = 0;
+        let isGameActive = false;
+        let isGamePaused = false; // New state variable for pause
+
+        // --- Game State Variables ---
+        let playerMesh, playerShieldMesh;
+        let enemies = [];
+        let obstacles = [];
+        let powerUps = [];
+        let playerBullets = [];
+        let enemyBullets = [];
+        let explosionParticles = [];
+        let damageNumbers = [];
+        let hazardZoneMesh = null;
+        let hazardZoneCenter = new THREE.Vector3();
+        let hazardZoneRadius = 15;
+        let backgroundParticles; // Reference to the background particle system
+
+        let greenZoneMesh = null; // Reference to the green zone mesh
+        let blueZoneMesh = null; // Reference to the blue zone mesh
+        let isMultiTargetActive = false; // State for blue zone effect
+        let multiTargetEndTime = 0; // End time for blue zone effect
+
+        let playerHealth = 100;
+        let playerScore = 0;
+        let playerInvincible = false;
+        let keys = {};
+        let lastPlayerShotTime = 0;
+        const playerShootCooldown = 0.2;
+
+        let enemySpawnTimer = 0;
+        const enemySpawnInterval = 5;
+
+        let scoreMultiplierActive = false;
+        let scoreMultiplierEndTime = 0;
+        const SCORE_MULTIPLIER_DURATION = 10; // seconds
+
+        let playerDamageMultiplier = 1;
+        let playerSpeedMultiplier = 1;
+        let damageMultiplierEndTime = 0;
+        let speedMultiplierEndTime = 0;
+        let lastSpecialAttackTime = -SPECIAL_ATTACK_COOLDOWN; // Allows immediate use at start
+        let specialAttackReady = false;
+
+        // --- Wave System Variables ---
+        let currentWave = 0;
+        let enemiesInCurrentWave = 0;
+        let enemiesRemainingInWave = 0;
+        const WAVE_CONFIG = [
+            { numEnemies: 5, bossChance: 0.1, powerUpChance: 0.5 },
+            { numEnemies: 8, bossChance: 0.2, powerUpChance: 0.6 },
+            { numEnemies: 12, bossChance: 0.3, powerUpChance: 0.7 },
+            { numEnemies: 15, bossChance: 0.4, powerUpChance: 0.8 },
+            { numEnemies: 20, bossChance: 0.5, powerUpChance: 0.9, finalWave: true }
         ];
 
-        const fileList = document.getElementById('fileList');
-        
-        htmlFiles.forEach(file => {
-            const li = document.createElement('li');
-            const a = document.createElement('a');
-            a.href = file;
-            a.textContent = file;
-            li.appendChild(a);
-            fileList.appendChild(li);
-        });
+        // --- Audio Elements (using Tone.js) ---
+        let shootSound, explosionSound, powerupSound, specialAttackSound, bgMusicSynth;
+
+        // --- Object Pools ---
+        const bulletPool = []; // Pool for player and enemy bullets
+
+        // --- Asset Loading & Preloading (now handles Tone.js setup) ---
+        function preloadAssets() {
+            console.log("Preloading assets...");
+            const loadingScreen = document.getElementById('loadingScreen');
+            loadingScreen.style.display = 'flex';
+
+            // Get references to homeScreen and portraitMessage early
+            homeScreen = document.getElementById('homeScreen');
+            portraitMessage = document.getElementById('portraitMessage');
+            startButton = document.getElementById('startButton'); // Also get startButton here
+
+            // Hide loading screen and initialize game visuals
+            loadingScreen.style.display = 'none';
+            init(); // Call init after all global variables are set
+            checkOrientation(); // Check orientation on load
+        }
+
+        // --- Initialization ---
+        function init() {
+            console.log("Game initialized (visuals only).");
+            dramaOverlay = document.getElementById('dramaOverlay');
+            damageFlash = document.getElementById('damageFlash');
+            healthFill = document.getElementById('healthFill');
+            scoreDisplay = document.getElementById('scoreDisplay');
+            pauseButton = document.getElementById('pauseButton'); // Get pause button reference
+            volumeSlider = document.getElementById('volumeSlider'); // Get volume slider reference
+            
+            // Scene
+            scene = new THREE.Scene();
+            scene.fog = new THREE.FogExp2(0x333333, 0.003);
+
+            // Camera
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.set(0, 30, 50);
+            camera.lookAt(0, 0, 0);
+
+            // Renderer
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight - 60);
+            renderer.domElement.style.marginTop = '60px';
+            document.body.appendChild(renderer.domElement);
+            renderer.domElement.style.display = 'none'; // Hide canvas initially
+
+            // Clock for delta time
+            clock = new THREE.Clock();
+
+            // Lighting
+            scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+            const dirLight = new THREE.DirectionalLight(0xffffff, 0.7);
+            dirLight.position.set(50, 100, 50);
+            scene.add(dirLight);
+
+            // Ground
+            const ground = new THREE.Mesh(
+                new THREE.PlaneGeometry(200, 200),
+                new THREE.MeshPhongMaterial({ color: 0x222222 })
+            );
+            ground.rotation.x = -Math.PI / 2;
+            scene.add(ground);
+
+            // Create boundaries (includes fixed hazard zone)
+            drawBoundaries();
+
+            // Player Model - More creative tank-like model
+            const playerBodyGeometry = new THREE.BoxGeometry(3, 1.5, 4); // Main body (wider, lower)
+            const playerBodyMaterial = new THREE.MeshPhongMaterial({ color: PLAYER_COLOR });
+            const playerBody = new THREE.Mesh(playerBodyGeometry, playerBodyMaterial);
+            playerBody.position.y = 0.75; // Half of height to sit on ground
+
+            const playerTurretGeometry = new THREE.CylinderGeometry(0.8, 1.2, 1.5, 8); // Turret base (wider at bottom)
+            const playerTurretMaterial = new THREE.MeshPhongMaterial({ color: 0x0088ff });
+            const playerTurret = new THREE.Mesh(playerTurretGeometry, playerTurretMaterial);
+            playerTurret.position.y = 1.5; // On top of the body
+
+            const playerBarrelGeometry = new THREE.CylinderGeometry(0.3, 0.3, 3, 8); // Barrel
+            const playerBarrelMaterial = new THREE.MeshPhongMaterial({ color: 0x555555 });
+            const playerBarrel = new THREE.Mesh(playerBarrelGeometry, playerBarrelMaterial);
+            playerBarrel.rotation.x = Math.PI / 2; // Point barrel forward
+            playerBarrel.position.set(0, 1.5, -1.5); // Position in front of turret
+
+            playerMesh = new THREE.Group();
+            playerMesh.add(playerBody);
+            playerMesh.add(playerTurret);
+            playerMesh.add(playerBarrel);
+            playerMesh.position.set(0, 0, 0); // Group position
+            scene.add(playerMesh);
+
+            // Shield visual for player (attach to the group)
+            const shieldGeometry = new THREE.SphereGeometry(3, 16, 16); // Slightly larger for the group
+            const shieldMaterial = new THREE.MeshBasicMaterial({ color: 0x00ffff, opacity: 0.3, transparent: true, blending: THREE.AdditiveBlending });
+            playerShieldMesh = new THREE.Mesh(shieldGeometry, shieldMaterial);
+            playerMesh.add(playerShieldMesh);
+
+            // Create particle background
+            createParticleBackground();
+
+            // Event Listeners
+            window.addEventListener('resize', onWindowResize, false);
+            window.addEventListener('keydown', onKeyDown, false);
+            window.addEventListener('keyup', onKeyUp, false);
+
+            // Mobile Controls Event Listeners
+            document.getElementById('upButton').addEventListener('touchstart', (e) => { e.preventDefault(); keys['KeyW'] = true; }, { passive: false });
+            document.getElementById('upButton').addEventListener('touchend', (e) => { e.preventDefault(); keys['KeyW'] = false; });
+            document.getElementById('leftButton').addEventListener('touchstart', (e) => { e.preventDefault(); keys['KeyA'] = true; }, { passive: false });
+            document.getElementById('leftButton').addEventListener('touchend', (e) => { e.preventDefault(); keys['KeyA'] = false; });
+            document.getElementById('downButton').addEventListener('touchstart', (e) => { e.preventDefault(); keys['KeyS'] = true; }, { passive: false });
+            document.getElementById('downButton').addEventListener('touchend', (e) => { e.preventDefault(); keys['KeyS'] = false; });
+            document.getElementById('rightButton').addEventListener('touchstart', (e) => { e.preventDefault(); keys['KeyD'] = true; }, { passive: false });
+            document.getElementById('rightButton').addEventListener('touchend', (e) => { e.preventDefault(); keys['KeyD'] = false; });
+
+            document.getElementById('shootButton').addEventListener('touchstart', (e) => { e.preventDefault(); keys['Space'] = true; }, { passive: false });
+            document.getElementById('shootButton').addEventListener('touchend', (e) => { e.preventDefault(); keys['Space'] = false; });
+            document.getElementById('specialAttackButton').addEventListener('touchstart', (e) => { e.preventDefault(); keys['KeyQ'] = true; }, { passive: false });
+            document.getElementById('specialAttackButton').addEventListener('touchend', (e) => { e.preventDefault(); keys['KeyQ'] = false; });
+
+            // Start Button Listener
+            startButton.addEventListener('click', startGame);
+            startButton.addEventListener('touchend', startGame); // For mobile touch
+
+            // Pause Button Listener
+            pauseButton.addEventListener('click', togglePause);
+            pauseButton.addEventListener('touchend', togglePause);
+
+            // Volume Slider Listener
+            volumeSlider.addEventListener('input', (e) => {
+                if (Tone.context && Tone.context.state === 'running') {
+                    // Tone.Master.volume.value expects decibels, convert linear 0-1 to dB
+                    // A simple conversion: 0 -> -Infinity (mute), 1 -> 0dB (full volume)
+                    // Tone.js provides Tone.dbToGain for conversion, but we can do it manually for simplicity
+                    // or just set the volume directly if the range is appropriate.
+                    // For Tone.js, volume is in dB. A good range is -60 (very quiet) to 0 (max).
+                    // Let's map 0-1 to -40dB to 0dB.
+                    const linearVolume = parseFloat(e.target.value);
+                    Tone.Master.volume.value = Tone.gainToDb(linearVolume);
+                    console.log(`Volume set to: ${linearVolume} (dB: ${Tone.Master.volume.value.toFixed(2)})`);
+                }
+            });
+            // Set initial volume
+            if (Tone.context && Tone.context.state === 'running') {
+                Tone.Master.volume.value = Tone.gainToDb(parseFloat(volumeSlider.value));
+            }
+            
+            // Initial call to animate to ensure rendering starts
+            animate();
+        }
+
+        function startGame() {
+            console.log("Start Game button clicked. Hiding home screen and starting game.");
+            homeScreen.style.display = 'none';
+            document.getElementById('gameUI').style.display = 'flex';
+            document.getElementById('mobileControls').style.display = 'flex';
+            renderer.domElement.style.display = 'block'; // Show canvas
+
+            // Fullscreen request removed due to browser permissions policy.
+            // The game will run in the current windowed mode.
+
+            // Initialize Tone.js and audio components ONLY after user gesture
+            if (!shootSound) { // Only initialize if not already done
+                try {
+                    Tone.start().then(() => {
+                        console.log("AudioContext started successfully on user gesture.");
+                        shootSound = new Tone.PolySynth(Tone.MembraneSynth, {
+                            pitchDecay: 0.005,
+                            octaves: 10,
+                            envelope: {
+                                attack: 0.001,
+                                decay: 0.01,
+                                sustain: 0.01,
+                                release: 0.01,
+                                attackCurve: "exponential"
+                            }
+                        }).toDestination();
+
+                        explosionSound = new Tone.NoiseSynth({
+                            noise: {
+                                type: "white"
+                            },
+                            envelope: {
+                                attack: 0.001,
+                                decay: 0.2,
+                                sustain: 0,
+                                release: 0.3
+                            }
+                        }).toDestination();
+
+                        powerupSound = new Tone.Synth({
+                            oscillator: {
+                                type: "triangle"
+                            },
+                            envelope: {
+                                attack: 0.005,
+                                decay: 0.1,
+                                sustain: 0.2,
+                                release: 0.5
+                            }
+                        }).toDestination();
+
+                        specialAttackSound = new Tone.Synth({
+                            oscillator: {
+                                type: "sawtooth"
+                            },
+                            envelope: {
+                                attack: 0.01,
+                                decay: 0.5,
+                                sustain: 0.1,
+                                release: 0.8
+                            },
+                            volume: -10 // Louder for impact
+                        }).toDestination();
+
+
+                        bgMusicSynth = new Tone.Synth({
+                            oscillator: {
+                                type: "sine"
+                            },
+                            envelope: {
+                                attack: 0.1,
+                                decay: 0.5,
+                                sustain: 0.8,
+                                release: 1
+                            }
+                        }).toDestination();
+
+                        const bgMusicLoop = new Tone.Loop(time => {
+                            bgMusicSynth.triggerAttackRelease("C4", "8n", time);
+                            bgMusicSynth.triggerAttackRelease("E4", "8n", time + Tone.Time("8n").toSeconds());
+                            bgMusicSynth.triggerAttackRelease("G4", "8n", time + Tone.Time("4n").toSeconds());
+                        }, "1n").start(0);
+                        bgMusicSynth.volume.value = -20; // Default background music volume
+
+                        Tone.Transport.start();
+                        // Set initial master volume based on slider
+                        Tone.Master.volume.value = Tone.gainToDb(parseFloat(volumeSlider.value));
+
+                        resetGame(); // Reset and start the game after audio is ready
+                    }).catch(e => {
+                        console.error("Failed to start AudioContext on user gesture:", e);
+                        showDramaMessage("Audio failed to start. Please try refreshing.", 3000 / 2); // Halved duration
+                        resetGame(); // Still start the game even if audio fails
+                    });
+                } catch (e) {
+                    console.error("Error initializing Tone.js:", e);
+                    showDramaMessage("Error with audio system. Try refreshing.", 3000 / 2); // Halved duration
+                    resetGame(); // Still start the game
+                }
+            } else {
+                // AudioContext is already running (e.g., if game was restarted)
+                resetGame();
+            }
+            // Ensure canvas size is updated after fullscreen attempt (even if not fullscreen)
+            onWindowResize();
+        }
+
+        function togglePause() {
+            isGamePaused = !isGamePaused;
+            if (isGamePaused) {
+                Tone.Transport.pause();
+                showDramaMessage("GAME PAUSED", 0); // Show indefinitely until unpaused
+                pauseButton.textContent = "Resume";
+            } else {
+                Tone.Transport.start();
+                dramaOverlay.style.opacity = 0; // Hide pause message
+                pauseButton.textContent = "Pause";
+            }
+            console.log("Game Paused:", isGamePaused);
+        }
+
+        function checkOrientation() {
+            if (window.innerWidth < 768 && window.innerHeight > window.innerWidth) {
+                // Mobile device in portrait mode
+                portraitMessage.style.display = 'flex';
+                homeScreen.style.display = 'none'; // Hide home screen if in portrait
+            } else {
+                portraitMessage.style.display = 'none';
+                // If not in portrait, ensure home screen is visible for desktop/landscape mobile
+                if (!isGameActive) { // Only show home screen if game isn't active
+                    homeScreen.style.display = 'flex';
+                }
+            }
+        }
+
+        // --- Game State Management ---
+        function resetGame() {
+            console.log("Game reset. Starting new round.");
+            
+            // Clear all active game elements from scene and arrays
+            enemies.forEach(e => scene.remove(e.mesh));
+            obstacles.forEach(o => scene.remove(o.mesh));
+            powerUps.forEach(p => scene.remove(p));
+            explosionParticles.forEach(p => scene.remove(p));
+            damageNumbers.forEach(n => scene.remove(n.sprite));
+
+            // Return all active bullets to the pool
+            playerBullets.forEach(bullet => disposeBulletMesh(bullet));
+            enemyBullets.forEach(bullet => disposeBulletMesh(bullet));
+
+            enemies = [];
+            obstacles = [];
+            playerBullets = []; // Ensure arrays are empty after disposing
+            enemyBullets = [];
+            powerUps = [];
+            explosionParticles = [];
+            damageNumbers = [];
+
+            // Remove dynamic zones from previous game if they exist
+            if (greenZoneMesh) { scene.remove(greenZoneMesh.mesh); greenZoneMesh = null; }
+            if (blueZoneMesh) { scene.remove(blueZoneMesh.mesh); blueZoneMesh = null; }
+
+            playerHealth = 100;
+            playerScore = 0;
+            playerInvincible = true; // Player starts invincible
+            playerShieldMesh.visible = true; // Show shield at start
+            setTimeout(() => {
+                playerInvincible = false;
+                playerShieldMesh.visible = false;
+                console.log("Initial shield deactivated.");
+                showDramaMessage("Shield Expired!", 1500 / 2); // Halved duration
+            }, 5000); // Invincibility for 5 seconds
+
+            playerDamageMultiplier = 1;
+            playerSpeedMultiplier = 1;
+            scoreMultiplierActive = false;
+            scoreMultiplierEndTime = 0;
+            damageMultiplierEndTime = 0;
+            speedMultiplierEndTime = 0;
+            lastSpecialAttackTime = -SPECIAL_ATTACK_COOLDOWN; // Special attack ready at start
+            isMultiTargetActive = false; // Reset multi-target state
+
+            updateUI();
+            playerMesh.position.set(0, 0, 0); // Reset player position for the new model
+
+            // Spawn initial obstacles (more varied sizes)
+            spawnObstacle(new THREE.Vector3(-30, 2, 0), 5, 4, 5);
+            spawnObstacle(new THREE.Vector3(30, 2, 0), 6, 3, 6);
+            spawnObstacle(new THREE.Vector3(0, 2, -30), 4, 5, 4);
+            spawnObstacle(new THREE.Vector3(0, 2, 30), 7, 2, 7);
+            spawnObstacle(new THREE.Vector3(-45, 2, 45), 3, 6, 3);
+
+            // Spawn one health pack at the start
+            spawnRandomPowerUp('healthPack');
+
+            currentWave = 0;
+            startNextWave(); // Start the first wave
+
+            showDramaMessage("War Zone: Engage!", 2000 / 2); // Halved duration
+            isGameActive = true;
+            isGamePaused = false; // Ensure game is not paused on reset
+            pauseButton.textContent = "Pause"; // Reset button text
+        }
+
+        function startNextWave() {
+            currentWave++;
+            console.log(`Starting Wave ${currentWave}`);
+            if (currentWave > WAVE_CONFIG.length) {
+                victory();
+                return;
+            }
+
+            // Full health recovery at the start of each wave
+            playerHealth = 100;
+            updateUI();
+            showDramaMessage("Health Fully Restored!", 1000 / 2); // Halved duration
+
+            const wave = WAVE_CONFIG[currentWave - 1];
+            enemiesInCurrentWave = wave.numEnemies;
+            enemiesRemainingInWave = wave.numEnemies;
+            enemySpawnTimer = 0; // Reset timer for wave-based spawning
+
+            showDramaMessage(`Wave ${currentWave} Incoming!`, 2000 / 2); // Halved duration
+
+            // Remove old dynamic zones and spawn new ones for the new wave
+            if (greenZoneMesh) { scene.remove(greenZoneMesh.mesh); greenZoneMesh = null; }
+            if (blueZoneMesh) { scene.remove(blueZoneMesh.mesh); blueZoneMesh = null; }
+            spawnRandomZone('friendly'); // Spawn new green zone
+            spawnRandomZone('enemy');    // Spawn new blue zone
+
+            // Spawn initial enemies for the wave
+            for (let i = 0; i < Math.min(3, enemiesInCurrentWave); i++) { // Spawn a few at the start
+                spawnRandomEnemy(wave.bossChance);
+            }
+
+            // Spawn power-ups for the new wave (excluding healthPack as it's handled separately)
+            if (Math.random() < wave.powerUpChance) {
+                const powerUpTypes = ['health', 'shield', 'damageBoost', 'speedBoost', 'scoreMultiplier', 'nukePack'];
+                const randomType = powerUpTypes[Math.floor(Math.random() * powerUpTypes.length)];
+                spawnRandomPowerUp(randomType);
+            }
+        }
+
+        function gameOver() {
+            console.log(`Game Over! Final Score: ${playerScore}`);
+            isGameActive = false;
+            showDramaMessage("GAME OVER! Score: " + playerScore, 5000 / 2); // Halved duration
+            // Hide game elements and show home screen after game over
+            document.getElementById('gameUI').style.display = 'none';
+            document.getElementById('mobileControls').style.display = 'none';
+            renderer.domElement.style.display = 'none';
+            if (Tone.Transport.state === 'started') {
+                Tone.Transport.stop(); // Stop audio on game over
+            }
+            setTimeout(() => {
+                homeScreen.style.display = 'flex';
+                checkOrientation(); // Re-check orientation for home screen
+            }, 2500); // Halved delay
+        }
+
+        function victory() {
+            console.log(`Victory! Final Score: ${playerScore}`);
+            isGameActive = false;
+            showDramaMessage("VICTORY! Score: " + playerScore, 5000 / 2); // Halved duration
+            // Hide game elements and show home screen after victory
+            document.getElementById('gameUI').style.display = 'none';
+            document.getElementById('mobileControls').style.display = 'none';
+            renderer.domElement.style.display = 'none';
+            if (Tone.Transport.state === 'started') {
+                Tone.Transport.stop(); // Stop audio on victory
+            }
+            setTimeout(() => {
+                homeScreen.style.display = 'flex';
+                checkOrientation(); // Re-check orientation for home screen
+            }, 2500); // Halved delay
+        }
+
+        function updateUI() {
+            healthFill.style.width = playerHealth + '%';
+            healthFill.style.background = `linear-gradient(to right, #00ff00 ${playerHealth}%, #ff0000 ${playerHealth}%)`;
+            scoreDisplay.textContent = `Score: ${playerScore} | Wave: ${currentWave}`;
+        }
+
+        // --- Helper Functions ---
+        function onWindowResize() {
+            // Adjust camera aspect ratio and renderer size based on current window dimensions
+            camera.aspect = window.innerWidth / (window.innerHeight - (isGameActive ? 60 : 0)); // Adjust for UI height if game is active
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight - (isGameActive ? 60 : 0));
+            checkOrientation(); // Re-check orientation on resize
+        }
+
+        function onKeyDown(event) {
+            keys[event.code] = true;
+        }
+
+        function onKeyUp(event) {
+            keys[event.code] = false;
+        }
+
+        function drawBoundaries() {
+            const material = new THREE.LineBasicMaterial({ color: 0xcccccc });
+            const points = [
+                new THREE.Vector3(WORLD_MIN, 0.2, WORLD_MIN),
+                new THREE.Vector3(WORLD_BOUNDARY, 0.2, WORLD_MIN),
+                new THREE.Vector3(WORLD_BOUNDARY, 0.2, WORLD_BOUNDARY),
+                new THREE.Vector3(WORLD_MIN, 0.2, WORLD_BOUNDARY),
+                new THREE.Vector3(WORLD_MIN, 0.2, WORLD_MIN)
+            ];
+            const geometry = new THREE.BufferGeometry().setFromPoints(points);
+            const line = new THREE.Line(geometry, material);
+            scene.add(line);
+
+            // Red zone is fixed in the middle and spawned only once here
+            spawnFixedHazardZone(new THREE.Vector3(0, 0.1, 0));
+        }
+
+        /**
+         * Spawns the fixed hazard zone in the middle of the map.
+         * @param {THREE.Vector3} position - The position to spawn the hazard zone.
+         */
+        function spawnFixedHazardZone(position) {
+            if (hazardZoneMesh) {
+                scene.remove(hazardZoneMesh); // Remove existing one if resetting
+            }
+            hazardZoneCenter.copy(position);
+            const geometry = new THREE.CircleGeometry(hazardZoneRadius, 32);
+            const material = new THREE.MeshBasicMaterial({ color: HAZARD_ZONE_COLOR, opacity: 0.4, transparent: true, side: THREE.DoubleSide });
+            const circle = new THREE.Mesh(geometry, material);
+            circle.rotation.x = -Math.PI / 2;
+            circle.position.copy(hazardZoneCenter);
+            scene.add(circle);
+            hazardZoneMesh = circle;
+            console.log(`Fixed Hazard zone spawned at X:${position.x.toFixed(2)}, Z:${position.z.toFixed(2)} with radius ${hazardZoneRadius}`);
+        }
+
+        /**
+         * Spawns a dynamic zone (friendly or enemy) at a random location.
+         * @param {string} type - 'friendly' for green (health), 'enemy' for blue (multi-target).
+         */
+        function spawnRandomZone(type) {
+            // Keep zones away from edges and center to avoid overlap with fixed hazard zone
+            const zoneSpawnPadding = 40;
+            const spawnRange = (WORLD_BOUNDARY - WORLD_MIN) - (zoneSpawnPadding * 2);
+            const spawnX = Math.random() * spawnRange + WORLD_MIN + zoneSpawnPadding;
+            const spawnZ = Math.random() * spawnRange + WORLD_MIN + zoneSpawnPadding;
+            const position = new THREE.Vector3(spawnX, 0.1, spawnZ);
+            const radius = 20;
+
+            let color;
+            let mesh;
+            if (type === 'friendly') {
+                color = FRIENDLY_ZONE_COLOR; // Green
+                const geometry = new THREE.CircleGeometry(radius, 32);
+                const material = new THREE.MeshBasicMaterial({ color: color, opacity: 0.2, transparent: true, side: THREE.DoubleSide });
+                mesh = new THREE.Mesh(geometry, material);
+                mesh.rotation.x = -Math.PI / 2;
+                mesh.position.copy(position);
+                scene.add(mesh);
+                greenZoneMesh = { mesh: mesh, position: position, radius: radius };
+                console.log(`Green zone spawned at X:${position.x.toFixed(2)}, Z:${position.z.toFixed(2)}`);
+            } else if (type === 'enemy') {
+                color = ENEMY_ZONE_COLOR; // Blue
+                const geometry = new THREE.CircleGeometry(radius, 32);
+                const material = new THREE.MeshBasicMaterial({ color: color, opacity: 0.2, transparent: true, side: THREE.DoubleSide });
+                mesh = new THREE.Mesh(geometry, material);
+                mesh.rotation.x = -Math.PI / 2;
+                mesh.position.copy(position);
+                scene.add(mesh);
+                blueZoneMesh = { mesh: mesh, position: position, radius: radius };
+                console.log(`Blue zone spawned at X:${position.x.toFixed(2)}, Z:${position.z.toFixed(2)}`);
+            }
+        }
+
+        function spawnObstacle(position, width, height, depth) {
+            const mesh = new THREE.Mesh(
+                new THREE.BoxGeometry(width, height, depth),
+                new THREE.MeshPhongMaterial({ color: OBSTACLE_COLOR })
+            );
+            mesh.position.copy(position);
+            scene.add(mesh);
+            obstacles.push({ mesh: mesh, health: 100 });
+            console.log(`Spawned obstacle at X:${position.x.toFixed(2)}, Y:${position.y.toFixed(2)}, Z:${position.z.toFixed(2)}`);
+        }
+
+        function spawnRandomEnemy(bossChance) {
+            const spawnRange = WORLD_BOUNDARY - WORLD_MIN - 20; // Keep enemies away from edges
+            const spawnX = Math.random() * spawnRange + WORLD_MIN + 10;
+            const spawnZ = Math.random() * spawnRange + WORLD_MIN + 10;
+            const spawnPosition = new THREE.Vector3(spawnX, 1, spawnZ);
+
+            // Ensure spawn is not too close to player
+            if (playerMesh.position.distanceTo(spawnPosition) < 40) {
+                // If too close, try again or adjust
+                return spawnRandomEnemy(bossChance); // Recursive call to find a better spot
+            }
+
+            spawnEnemy(spawnPosition, Math.random() < bossChance);
+        }
+
+        function spawnEnemy(position, isBoss = false) {
+            const mesh = new THREE.Mesh(
+                new THREE.BoxGeometry(2, 2, 2),
+                new THREE.MeshPhongMaterial({ color: ENEMY_COLOR })
+            );
+            mesh.position.copy(position);
+            mesh.userData.isBoss = isBoss;
+            scene.add(mesh);
+            enemies.push({ mesh: mesh, health: isBoss ? 200 : 100, lastShotTime: performance.now() / 1000 });
+            console.log(`Spawned ${isBoss ? 'Boss' : 'Enemy'} at X:${position.x.toFixed(2)}, Y:${position.y.toFixed(2)}, Z:${position.z.toFixed(2)}`);
+        }
+
+        /**
+         * Spawns a power-up at a given position and type.
+         * @param {THREE.Vector3} position - The position to spawn the power-up.
+         * @param {string} type - The type of power-up ('health', 'shield', etc.).
+         */
+        function spawnPowerUp(position, type) {
+            let color;
+            let shape;
+            switch (type) {
+                case 'health': color = 0x00ff00; shape = new THREE.SphereGeometry(1, 12, 12); break;
+                case 'shield': color = 0x00ffff; shape = new THREE.SphereGeometry(1, 12, 12); break;
+                case 'damageBoost': color = 0xFFA500; shape = new THREE.SphereGeometry(1, 12, 12); break; // Orange for damage boost
+                case 'speedBoost': color = 0xFFFF00; shape = new THREE.SphereGeometry(1, 12, 12); break; // Yellow for speed boost
+                case 'scoreMultiplier': color = 0x8A2BE2; shape = new THREE.SphereGeometry(1, 12, 12); break; // Purple for score multiplier
+                case 'healthPack': color = 0x00ff00; shape = new THREE.BoxGeometry(1.5, 1.5, 1.5); break; // Green cube for HP pack
+                case 'nukePack': color = 0x800080; shape = new THREE.OctahedronGeometry(1.5); break; // Purple octahedron for Nuke pack
+                default: color = 0xffffff; shape = new THREE.SphereGeometry(1, 12, 12);
+            }
+            const mesh = new THREE.Mesh(
+                shape,
+                new THREE.MeshPhongMaterial({ color })
+            );
+            mesh.position.copy(position);
+            mesh.userData.type = type;
+            powerUps.push(mesh);
+            scene.add(mesh);
+            console.log(`Spawned ${type} power-up at X:${position.x.toFixed(2)}, Y:${position.y.toFixed(2)}, Z:${position.z.toFixed(2)}`);
+        }
+
+        /**
+         * Spawns a power-up of a given type at a random position within the world boundaries.
+         * @param {string} type - The type of power-up to spawn.
+         */
+        function spawnRandomPowerUp(type) {
+            const spawnRange = WORLD_BOUNDARY - WORLD_MIN - 20; // Keep power-ups away from edges
+            const spawnX = Math.random() * spawnRange + WORLD_MIN + 10;
+            const spawnZ = Math.random() * spawnRange + WORLD_MIN + 10;
+            spawnPowerUp(new THREE.Vector3(spawnX, 1, spawnZ), type);
+        }
+
+        /**
+         * Gets a bullet mesh from the pool or creates a new one if the pool is empty.
+         * @param {boolean} isPlayerBullet - True if it's a player bullet, false for enemy.
+         * @returns {THREE.Mesh} The bullet mesh.
+         */
+        function getBulletMesh(isPlayerBullet) {
+            let bullet;
+            if (bulletPool.length > 0) {
+                bullet = bulletPool.pop();
+                bullet.visible = true;
+                console.log("Reusing bullet from pool. Pool size:", bulletPool.length);
+            } else {
+                const geometry = new THREE.SphereGeometry(0.3, 8, 8);
+                const material = new THREE.MeshBasicMaterial();
+                bullet = new THREE.Mesh(geometry, material);
+                console.log("Creating new bullet. Pool size:", bulletPool.length);
+            }
+            // Set material color based on bullet type
+            bullet.material.color.setHex(isPlayerBullet ? 0x00ffff : 0xffff00);
+            return bullet;
+        }
+
+        /**
+         * Returns a bullet mesh to the pool and hides it.
+         * @param {THREE.Mesh} bullet - The bullet mesh to dispose.
+         */
+        function disposeBulletMesh(bullet) {
+            scene.remove(bullet); // Remove from scene
+            bullet.visible = false; // Hide it
+            if (bulletPool.length < MAX_BULLETS_IN_POOL) {
+                bulletPool.push(bullet); // Add back to pool if not full
+                console.log("Bullet returned to pool. Pool size:", bulletPool.length);
+            } else {
+                // If pool is full, dispose of geometry and material to free memory
+                if (bullet.geometry) bullet.geometry.dispose();
+                if (bullet.material) bullet.material.dispose();
+                console.log("Bullet disposed (pool full).");
+            }
+        }
+
+        function shootBullet(origin, target, isPlayerBullet) {
+            const bullet = getBulletMesh(isPlayerBullet);
+            bullet.position.copy(origin);
+
+            const direction = new THREE.Vector3().subVectors(target, origin).normalize();
+            bullet.userData = { direction: direction, speed: BULLET_SPEED, damage: isPlayerBullet ? (PLAYER_BASE_BULLET_DAMAGE * playerDamageMultiplier) : ENEMY_BULLET_DAMAGE };
+
+            if (isPlayerBullet) {
+                playerBullets.push(bullet);
+                console.log(`Player shot bullet from X:${origin.x.toFixed(2)}, Z:${origin.z.toFixed(2)} towards X:${target.x.toFixed(2)}, Z:${target.z.toFixed(2)} (Damage: ${bullet.userData.damage})`);
+            } else {
+                enemyBullets.push(bullet);
+                console.log(`Enemy shot bullet from X:${origin.x.toFixed(2)}, Z:${origin.z.toFixed(2)} towards X:${target.x.toFixed(2)}, Z:${target.z.toFixed(2)}`);
+            }
+            scene.add(bullet);
+            if (Tone.context && Tone.context.state === 'running') { // Check Tone.context exists and is running
+                shootSound.triggerAttackRelease("C2", "16n");
+            }
+        }
+
+        function performSpecialAttack() {
+            const currentTime = performance.now() / 1000;
+            if (currentTime - lastSpecialAttackTime < SPECIAL_ATTACK_COOLDOWN) {
+                console.log("Special attack on cooldown.");
+                showDramaMessage(`Special Attack Cooldown: ${Math.ceil(SPECIAL_ATTACK_COOLDOWN - (currentTime - lastSpecialAttackTime))}s`, 1000 / 2); // Halved duration
+                return;
+            }
+
+            console.log("Performing special attack!");
+            if (Tone.context && Tone.context.state === 'running') { // Check Tone.context exists and is running
+                specialAttackSound.triggerAttackRelease("C4", "1n"); // A long, impactful sound
+            }
+            showDramaMessage("Special Attack!", 1500 / 2); // Halved duration
+            lastSpecialAttackTime = currentTime;
+
+            const attackRadius = 30; // Radius of the special attack
+            const attackDamage = 150; // Damage of the special attack
+
+            // Visual effect for special attack (simple expanding sphere)
+            const attackSphereGeometry = new THREE.SphereGeometry(1, 32, 32);
+            const attackSphereMaterial = new THREE.MeshBasicMaterial({ color: 0xff00ff, opacity: 0.5, transparent: true, blending: THREE.AdditiveBlending });
+            const attackSphere = new THREE.Mesh(attackSphereGeometry, attackSphereMaterial);
+            attackSphere.position.copy(playerMesh.position);
+            scene.add(attackSphere);
+
+            let scale = 1;
+            const animateAttack = () => {
+                if (scale < attackRadius) {
+                    attackSphere.scale.set(scale, scale, scale);
+                    attackSphere.material.opacity = 0.5 - (scale / attackRadius) * 0.5;
+                    scale += 2; // Expand quickly
+                    requestAnimationFrame(animateAttack);
+                } else {
+                    scene.remove(attackSphere);
+                }
+            };
+            animateAttack();
+
+            enemies.forEach(enemy => {
+                if (playerMesh.position.distanceTo(enemy.mesh.position) < attackRadius) {
+                    enemy.health -= attackDamage;
+                    spawnDamageNumber(attackDamage, enemy.mesh.position, 0x00ff00); // Green for special attack damage
+                    console.log(`Special attack hit enemy. Enemy health: ${enemy.health}`);
+                }
+            });
+            // Also damage obstacles
+            obstacles.forEach(obstacle => {
+                if (playerMesh.position.distanceTo(obstacle.mesh.position) < attackRadius) {
+                    obstacle.health -= attackDamage;
+                    spawnDamageNumber(attackDamage, obstacle.mesh.position, 0x00ff00);
+                    console.log(`Special attack hit obstacle. Obstacle health: ${obstacle.health}`);
+                }
+            });
+        }
+
+
+        function updatePlayer(delta) {
+            if (!playerMesh) return;
+
+            const currentSpeed = PLAYER_BASE_SPEED * playerSpeedMultiplier;
+            const moveAmount = currentSpeed * delta;
+            let moved = false;
+            if (keys['KeyW']) { playerMesh.position.z -= moveAmount; moved = true; }
+            if (keys['KeyS']) { playerMesh.position.z += moveAmount; moved = true; }
+            if (keys['KeyA']) { playerMesh.position.x -= moveAmount; moved = true; }
+            if (keys['KeyD']) { playerMesh.position.x += moveAmount; moved = true; }
+
+            // Clamp player position to world boundaries
+            playerMesh.position.x = Math.max(WORLD_MIN, Math.min(WORLD_BOUNDARY, playerMesh.position.x));
+            playerMesh.position.z = Math.max(WORLD_MIN, Math.min(WORLD_BOUNDARY, playerMesh.position.z));
+
+            // Player bobbing animation
+            playerMesh.position.y = 1 + Math.sin(performance.now() * 0.005) * 0.2; // Subtle bobbing
+
+            // Player turret rotation to face mouse/target (simplified for now, or based on movement direction)
+            // For a more advanced game, you'd calculate this based on mouse position or target.
+            // For now, let's make it rotate slightly based on horizontal movement
+            if (keys['KeyA']) {
+                playerMesh.children[1].rotation.y = -Math.PI / 8; // Rotate turret left
+            } else if (keys['KeyD']) {
+                playerMesh.children[1].rotation.y = Math.PI / 8; // Rotate turret right
+            } else {
+                playerMesh.children[1].rotation.y = 0; // Reset turret
+            }
+
+
+            // Apply green zone health recovery
+            if (greenZoneMesh && playerMesh.position.distanceTo(greenZoneMesh.position) < greenZoneMesh.radius) {
+                playerHealth = Math.min(100, playerHealth + HEALTH_RECOVERY_RATE * delta);
+                updateUI();
+            }
+
+            // Apply blue zone multi-target effect
+            const currentTime = performance.now() / 1000;
+            if (blueZoneMesh && playerMesh.position.distanceTo(blueZoneMesh.position) < blueZoneMesh.radius) {
+                if (!isMultiTargetActive) {
+                    isMultiTargetActive = true;
+                    multiTargetEndTime = currentTime + MULTI_TARGET_DURATION;
+                    showDramaMessage("Multi-Target Active!", 1500 / 2); // Halved duration
+                    console.log("Multi-target activated.");
+                }
+            } else {
+                // If player leaves the zone, deactivate immediately if active
+                if (isMultiTargetActive && currentTime > multiTargetEndTime) {
+                    isMultiTargetActive = false;
+                    showDramaMessage("Multi-Target Expired!", 1500 / 2); // Halved duration
+                    console.log("Multi-target deactivated.");
+                }
+            }
+            // Ensure multi-target deactivates if time runs out even if player is still in zone
+            if (isMultiTargetActive && currentTime > multiTargetEndTime) {
+                isMultiTargetActive = false;
+                showDramaMessage("Multi-Target Expired!", 1500 / 2); // Halved duration
+                console.log("Multi-target deactivated.");
+            }
+
+
+            // Player shooting
+            if (keys['Space'] && performance.now() / 1000 - lastPlayerShotTime > playerShootCooldown) {
+                if (isMultiTargetActive) {
+                    // Multi-target shooting
+                    const sortedEnemies = [...enemies].sort((a, b) =>
+                        playerMesh.position.distanceTo(a.mesh.position) - playerMesh.position.distanceTo(b.mesh.position)
+                    );
+                    const targets = sortedEnemies.slice(0, MULTI_TARGET_COUNT);
+                    if (targets.length > 0) {
+                        targets.forEach(enemy => {
+                            shootBullet(playerMesh.position, enemy.mesh.position, true);
+                        });
+                        lastPlayerShotTime = performance.now() / 1000;
+                    }
+                } else {
+                    // Single target shooting
+                    let closestEnemy = null;
+                    let minDistance = Infinity;
+                    enemies.forEach(enemy => {
+                        const distance = playerMesh.position.distanceTo(enemy.mesh.position);
+                        if (distance < minDistance) {
+                            minDistance = distance;
+                            closestEnemy = enemy;
+                        }
+                    });
+
+                    if (closestEnemy) {
+                        shootBullet(playerMesh.position, closestEnemy.mesh.position, true);
+                        lastPlayerShotTime = performance.now() / 1000;
+                    }
+                }
+            }
+
+            // Special attack
+            if (keys['KeyQ']) {
+                performSpecialAttack();
+            }
+
+            // Apply hazard zone damage
+            if (hazardZoneMesh && playerMesh.position.distanceTo(hazardZoneCenter) < hazardZoneRadius) {
+                const damageThisFrame = HAZARD_DAMAGE_RATE * delta;
+                if (!playerInvincible) {
+                    playerHealth -= damageThisFrame;
+                    updateUI();
+                    if (playerHealth <= 0) {
+                        gameOver();
+                    }
+                }
+            }
+
+            // Update power-up durations
+            if (scoreMultiplierActive && currentTime > scoreMultiplierEndTime) {
+                scoreMultiplierActive = false;
+                showDramaMessage("Score Multiplier Expired!", 1500 / 2); // Halved duration
+                console.log("Score multiplier deactivated.");
+            }
+            if (playerDamageMultiplier > 1 && currentTime > damageMultiplierEndTime) {
+                playerDamageMultiplier = 1;
+                showDramaMessage("Damage Boost Expired!", 1500 / 2); // Halved duration
+                console.log("Damage boost deactivated.");
+            }
+            if (playerSpeedMultiplier > 1 && currentTime > speedMultiplierEndTime) {
+                playerSpeedMultiplier = 1;
+                showDramaMessage("Speed Boost Expired!", 1500 / 2); // Halved duration
+                console.log("Speed boost deactivated.");
+            }
+        }
+
+        function updateBullets(delta) {
+            // Player bullets
+            for (let i = playerBullets.length - 1; i >= 0; i--) {
+                const bullet = playerBullets[i];
+                bullet.position.addScaledVector(bullet.userData.direction, bullet.userData.speed * delta);
+
+                // Check collision with enemies
+                let hitEnemy = false;
+                for (let j = enemies.length - 1; j >= 0; j--) {
+                    if (bullet.position.distanceTo(enemies[j].mesh.position) < 2) {
+                        enemies[j].health -= bullet.userData.damage;
+                        spawnDamageNumber(bullet.userData.damage, enemies[j].mesh.position);
+                        disposeBulletMesh(bullet); // Return bullet to pool
+                        playerBullets.splice(i, 1);
+                        hitEnemy = true;
+                        console.log(`Player bullet hit enemy. Enemy health: ${enemies[j].health}`);
+                        break;
+                    }
+                }
+                if (hitEnemy) continue;
+
+                // Check collision with obstacles
+                let hitObstacle = false;
+                for (let j = obstacles.length - 1; j >= 0; j--) {
+                    const obstacleBox = new THREE.Box3().setFromObject(obstacles[j].mesh);
+                    const bulletSphere = new THREE.Sphere(bullet.position, bullet.geometry.parameters.radius);
+                    if (obstacleBox.intersectsSphere(bulletSphere)) {
+                        obstacles[j].health -= bullet.userData.damage; // Bullets damage obstacles
+                        spawnDamageNumber(bullet.userData.damage, obstacles[j].mesh.position);
+                        disposeBulletMesh(bullet); // Return bullet to pool
+                        playerBullets.splice(i, 1);
+                        hitObstacle = true;
+                        console.log(`Player bullet hit obstacle. Obstacle health: ${obstacles[j].health}`);
+                        break;
+                    }
+                }
+                if (hitObstacle) continue;
+
+                // Remove if out of bounds
+                if (bullet.position.length() > WORLD_BOUNDARY * 1.5) {
+                    disposeBulletMesh(bullet); // Return bullet to pool
+                    playerBullets.splice(i, 1);
+                }
+            }
+
+            // Enemy bullets
+            for (let i = enemyBullets.length - 1; i >= 0; i--) {
+                const bullet = enemyBullets[i];
+                bullet.position.addScaledVector(bullet.userData.direction, bullet.userData.speed * delta);
+
+                // Check collision with player
+                if (playerMesh && bullet.position.distanceTo(playerMesh.position) < 2) {
+                    if (!playerInvincible) {
+                        playerHealth -= bullet.userData.damage;
+                        updateUI();
+                        flashDamage();
+                        cameraShakeIntensity = 0.5;
+                        cameraShakeTime = 0.1;
+                        console.log(`Enemy bullet hit player. Player health: ${playerHealth}`);
+                        if (playerHealth <= 0) {
+                            gameOver();
+                        }
+                    } else {
+                        console.log("Enemy bullet hit player, but shield is active!");
+                    }
+                    disposeBulletMesh(bullet); // Return bullet to pool
+                    enemyBullets.splice(i, 1);
+                    continue;
+                }
+
+                // Check collision with obstacles
+                let hitObstacle = false;
+                for (let j = obstacles.length - 1; j >= 0; j--) {
+                    const obstacleBox = new THREE.Box3().setFromObject(obstacles[j].mesh);
+                    const bulletSphere = new THREE.Sphere(bullet.position, bullet.geometry.parameters.radius);
+                    if (obstacleBox.intersectsSphere(bulletSphere)) {
+                        obstacles[j].health -= bullet.userData.damage; // Bullets damage obstacles
+                        spawnDamageNumber(bullet.userData.damage, obstacles[j].mesh.position);
+                        disposeBulletMesh(bullet); // Return bullet to pool
+                        enemyBullets.splice(i, 1);
+                        hitObstacle = true;
+                        console.log(`Enemy bullet hit obstacle. Obstacle health: ${obstacles[j].health}`);
+                        break;
+                    }
+                }
+                if (hitObstacle) continue;
+
+                // Remove if out of bounds
+                if (bullet.position.length() > WORLD_BOUNDARY * 1.5) {
+                    disposeBulletMesh(bullet); // Return bullet to pool
+                    enemyBullets.splice(i, 1);
+                }
+            }
+        }
+
+        function updateEnemies(delta) {
+            for (let i = enemies.length - 1; i >= 0; i--) {
+                const enemy = enemies[i];
+                // Enemy movement towards player
+                if (playerMesh) {
+                    const direction = new THREE.Vector3().subVectors(playerMesh.position, enemy.mesh.position).normalize();
+                    enemy.mesh.position.addScaledVector(direction, 5 * delta);
+                }
+
+                // Enemy shooting
+                if (playerMesh && performance.now() / 1000 - enemy.lastShotTime > ENEMY_SHOOT_INTERVAL && enemy.mesh.position.distanceTo(playerMesh.position) < 50) {
+                    shootBullet(enemy.mesh.position, playerMesh.position, false);
+                    enemy.lastShotTime = performance.now() / 1000;
+                }
+
+                if (enemy.health <= 0) {
+                    spawnExplosion(enemy.mesh.position);
+                    let scoreEarned = enemy.mesh.userData.isBoss ? 500 : 100;
+                    if (scoreMultiplierActive) {
+                        scoreEarned *= 2;
+                        console.log("Score multiplier active! Doubling score.");
+                    }
+                    playerScore += scoreEarned;
+                    updateUI();
+                    scene.remove(enemy.mesh);
+                    enemies.splice(i, 1);
+                    cameraShakeIntensity = 1.0;
+                    cameraShakeTime = 0.2;
+                    console.log(`Enemy defeated! Gained ${scoreEarned} points. Total score: ${playerScore}`);
+
+                    enemiesRemainingInWave--;
+                    if (enemiesRemainingInWave <= 0) {
+                        startNextWave();
+                    } else {
+                        // Spawn a new enemy if there are still enemies for this wave
+                        if (enemies.length < enemiesInCurrentWave) { // Prevent over-spawning
+                            spawnRandomEnemy(WAVE_CONFIG[currentWave - 1].bossChance);
+                        }
+                    }
+                }
+            }
+
+            // Dynamic enemy spawning (for ongoing waves)
+            enemySpawnTimer += delta;
+            if (enemySpawnTimer >= enemySpawnInterval && enemies.length < enemiesInCurrentWave) {
+                spawnRandomEnemy(WAVE_CONFIG[currentWave - 1].bossChance);
+                enemySpawnTimer = 0;
+            }
+        }
+
+        function updateObstacles() {
+            for (let i = obstacles.length - 1; i >= 0; i--) {
+                if (obstacles[i].health <= 0) {
+                    spawnExplosion(obstacles[i].mesh.position);
+                    scene.remove(obstacles[i].mesh); // Ensure mesh is removed
+                    obstacles.splice(i, 1);
+                    console.log("Obstacle destroyed!");
+                }
+            }
+        }
+
+        function updatePowerUps() {
+            for (let i = powerUps.length - 1; i >= 0; i--) {
+                const pu = powerUps[i];
+                // Check if player is close enough to pick up the power-up
+                if (playerMesh && pu.position.distanceTo(playerMesh.position) < POWERUP_PICKUP_RADIUS) { // Increased pickup radius
+                    if (Tone.context && Tone.context.state === 'running') { // Check Tone.context exists and is running
+                        powerupSound.triggerAttackRelease("E5", "16n");
+                    }
+                    console.log(`Collected ${pu.userData.type} power-up.`);
+                    const currentTime = performance.now() / 1000;
+
+                    switch (pu.userData.type) {
+                        case 'shield':
+                            playerShieldMesh.visible = true;
+                            playerInvincible = true;
+                            setTimeout(() => {
+                                playerShieldMesh.visible = false;
+                                playerInvincible = false;
+                                console.log("Shield deactivated.");
+                            }, 5000);
+                            showDramaMessage("Shield Activated!", 1500 / 2); // Halved duration
+                            break;
+                        case 'health':
+                            playerHealth = Math.min(100, playerHealth + 25);
+                            updateUI();
+                            showDramaMessage("Health Restored!", 1500 / 2); // Halved duration
+                            break;
+                        case 'healthPack': // New: HP Pack
+                            playerHealth = Math.min(100, playerHealth + 50); // Restore more health
+                            updateUI();
+                            showDramaMessage("HP Pack Collected! +50 Health!", 1500 / 2); // Halved duration
+                            // Respawn health pack after a delay
+                            setTimeout(() => spawnRandomPowerUp('healthPack'), HEALTH_PACK_RESPAWN_TIME * 1000);
+                            break;
+                        case 'nukePack': // New: Nuke Pack
+                            console.log("Nuke Pack Collected! Detonating all enemies.");
+                            showDramaMessage("NUKE! All Enemies Eliminated!", 2000 / 2); // Halved duration
+                            enemies.forEach(enemy => {
+                                spawnExplosion(enemy.mesh.position);
+                                let scoreEarned = enemy.mesh.userData.isBoss ? 500 : 100;
+                                if (scoreMultiplierActive) {
+                                    scoreEarned *= 2;
+                                }
+                                playerScore += scoreEarned;
+                                scene.remove(enemy.mesh);
+                                enemiesRemainingInWave--; // Decrement remaining enemies for wave progression
+                            });
+                            enemies = []; // Clear the enemies array
+                            updateUI();
+                            // If all enemies are cleared and it's not the final wave, start next wave
+                            if (enemiesRemainingInWave <= 0 && currentWave < WAVE_CONFIG.length) {
+                                startNextWave();
+                            } else if (enemiesRemainingInWave <= 0 && currentWave === WAVE_CONFIG.length) {
+                                victory();
+                            }
+                            break;
+                        case 'scoreMultiplier':
+                            scoreMultiplierActive = true;
+                            scoreMultiplierEndTime = currentTime + SCORE_MULTIPLIER_DURATION;
+                            showDramaMessage("Score Multiplier Active!", 1500 / 2); // Halved duration
+                            break;
+                        case 'damageBoost':
+                            playerDamageMultiplier = 2; // Double damage
+                            damageMultiplierEndTime = currentTime + DAMAGE_SPEED_BOOST_DURATION;
+                            showDramaMessage("Damage Boost Active!", 1500 / 2); // Halved duration
+                            break;
+                        case 'speedBoost':
+                            playerSpeedMultiplier = 2; // Double speed
+                            speedMultiplierEndTime = currentTime + DAMAGE_SPEED_BOOST_DURATION;
+                            showDramaMessage("Speed Boost Active!", 1500 / 2); // Halved duration
+                            break;
+                    }
+                    scene.remove(pu);
+                    powerUps.splice(i, 1);
+                }
+            }
+        }
+
+        function spawnExplosion(position) {
+            const numParticles = 20;
+            const particleGeometry = new THREE.SphereGeometry(0.5, 8, 8);
+            const particleMaterial = new THREE.MeshBasicMaterial({ color: 0xffa500, transparent: true, opacity: 1 });
+
+            for (let i = 0; i < numParticles; i++) {
+                const particle = new THREE.Mesh(particleGeometry, particleMaterial.clone());
+                particle.position.copy(position);
+                const speed = Math.random() * 5 + 2;
+                const angleX = Math.random() * Math.PI * 2;
+                const angleY = Math.random() * Math.PI * 2;
+                particle.userData.direction = new THREE.Vector3(
+                    Math.cos(angleX) * Math.sin(angleY),
+                    Math.cos(angleY),
+                    Math.sin(angleX) * Math.sin(angleY)
+                ).normalize();
+                particle.userData.speed = speed;
+                particle.userData.lifetime = 1.0;
+                explosionParticles.push(particle);
+                scene.add(particle);
+            }
+            if (Tone.context && Tone.context.state === 'running') { // Check Tone.context exists and is running
+                explosionSound.triggerAttackRelease("8n");
+            }
+        }
+
+        function updateExplosionParticles(delta) {
+            for (let i = explosionParticles.length - 1; i >= 0; i--) {
+                const particle = explosionParticles[i];
+                particle.position.addScaledVector(particle.userData.direction, particle.userData.speed * delta);
+                particle.userData.lifetime -= delta;
+                particle.material.opacity = Math.max(0, particle.userData.lifetime);
+
+                if (particle.userData.lifetime <= 0) {
+                    scene.remove(particle);
+                    explosionParticles.splice(i, 1);
+                }
+            }
+        }
+
+        function spawnDamageNumber(damage, position, color = 0xff0000) { // Added color parameter
+            const canvas = document.createElement('canvas');
+            canvas.width = 128; canvas.height = 64;
+            const ctx = canvas.getContext('2d');
+            ctx.font = "bold 32px Arial";
+            ctx.fillStyle = new THREE.Color(color).getStyle(); // Use Three.js Color for consistency
+            ctx.textAlign = "center";
+            ctx.fillText(damage, 64, 40);
+            const texture = new THREE.CanvasTexture(canvas);
+            const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, transparent: true }));
+            sprite.position.copy(position);
+            sprite.scale.set(10, 5, 1);
+            damageNumbers.push({ sprite: sprite, lifetime: 1.0 });
+            scene.add(sprite);
+        }
+
+        function updateDamageNumbers(delta) {
+            for (let i = damageNumbers.length - 1; i >= 0; i--) {
+                const dmgObj = damageNumbers[i];
+                dmgObj.lifetime -= delta;
+                dmgObj.sprite.material.opacity = Math.max(dmgObj.lifetime, 0);
+                dmgObj.sprite.position.y += delta * 5;
+                if (dmgObj.lifetime <= 0) {
+                    scene.remove(dmgObj.sprite);
+                    damageNumbers.splice(i, 1);
+                }
+            }
+        }
+
+        function flashDamage() {
+            damageFlash.style.opacity = 0.6;
+            setTimeout(() => damageFlash.style.opacity = 0, 100);
+            console.log("Player took damage!");
+        }
+
+        function showDramaMessage(message, duration = 3000) {
+            dramaOverlay.textContent = message;
+            dramaOverlay.style.opacity = 1;
+            if (duration > 0) { // Only set timeout if duration is positive
+                setTimeout(() => {
+                    dramaOverlay.style.opacity = 0;
+                }, duration);
+            }
+        }
+
+        /**
+         * Creates a dynamic particle background for the scene.
+         */
+        function createParticleBackground() {
+            const particleGeometry = new THREE.BufferGeometry();
+            const positions = [];
+            const colors = [];
+            const color = new THREE.Color();
+
+            // Spawn particles in a much larger area beyond the game world
+            // Ensure particles are well outside the WORLD_BOUNDARY
+            const worldSize = WORLD_BOUNDARY - WORLD_MIN; // 200 units
+            const buffer = worldSize * 1.5; // Buffer around the world
+            const minCoord = WORLD_MIN - buffer;
+            const maxCoord = WORLD_BOUNDARY + buffer;
+
+            for (let i = 0; i < PARTICLE_COUNT; i++) {
+                const x = Math.random() * (maxCoord - minCoord) + minCoord;
+                const y = Math.random() * 200 - 100; // Spread vertically
+                const z = Math.random() * (maxCoord - minCoord) + minCoord;
+                positions.push(x, y, z);
+
+                // Assign a subtle color, e.g., dark blue/purple
+                color.setHSL(Math.random() * 0.1 + 0.6, 0.5, Math.random() * 0.3 + 0.2); // Blue-ish to purplish hues
+                colors.push(color.r, color.g, color.b);
+            }
+
+            particleGeometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+            particleGeometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+
+            const particleMaterial = new THREE.PointsMaterial({
+                size: 2,
+                vertexColors: true,
+                transparent: true,
+                opacity: 0.8,
+                blending: THREE.AdditiveBlending,
+                sizeAttenuation: true
+            });
+
+            backgroundParticles = new THREE.Points(particleGeometry, particleMaterial);
+            scene.add(backgroundParticles);
+            console.log(`Created ${PARTICLE_COUNT} background particles.`);
+        }
+
+        /**
+         * Updates the position of the background particles to create a subtle movement effect.
+         * @param {number} delta - Time elapsed since last frame.
+         */
+        function updateParticleBackground(delta) {
+            if (backgroundParticles) {
+                const positions = backgroundParticles.geometry.attributes.position.array;
+                for (let i = 0; i < positions.length; i += 3) {
+                    // Move particles slowly towards the camera (negative Z)
+                    positions[i + 2] += PARTICLE_SPEED * delta;
+
+                    // If a particle moves past the camera's front view, reset it to the far end
+                    // Ensure it resets far enough back to avoid popping into view
+                    if (positions[i + 2] > camera.position.z + 50) { // If it passes a certain point in front of camera
+                        positions[i + 2] = camera.position.z - 400; // Reset far behind camera
+                    }
+                }
+                backgroundParticles.geometry.attributes.position.needsUpdate = true;
+            }
+        }
+
+        // --- Main Animation Loop ---
+        function animate() {
+            requestAnimationFrame(animate);
+
+            if (isGamePaused) {
+                renderer.render(scene, camera); // Still render the paused scene
+                return; // Stop game logic updates
+            }
+
+            const delta = clock.getDelta();
+
+            // Only render the game if it's active, otherwise render the scene (for home screen)
+            if (isGameActive) {
+                updatePlayer(delta);
+                updateBullets(delta);
+                updateEnemies(delta);
+                updateObstacles();
+                updatePowerUps();
+                updateExplosionParticles(delta);
+                updateDamageNumbers(delta);
+
+                // Camera shake effect
+                if (cameraShakeTime > 0) {
+                    camera.position.x += (Math.random() - 0.5) * cameraShakeIntensity;
+                    camera.position.y += (Math.random() - 0.5) * cameraShakeIntensity;
+                    cameraShakeTime -= delta;
+                } else {
+                    const cameraOffset = new THREE.Vector3(0, 30, 40);
+                    camera.position.copy(playerMesh.position).add(cameraOffset);
+                    camera.lookAt(playerMesh.position);
+                }
+            }
+            updateParticleBackground(delta); // Update particles even if game is not active
+            renderer.render(scene, camera);
+        }
+
+        window.onload = preloadAssets;
     </script>
 </body>
 </html>
