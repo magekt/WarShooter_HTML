@@ -432,9 +432,13 @@
   <div id="homeScreen" class="overlay">
     <div class="overlay-content">
         <h1>Divine Shooter: GANESH</h1>
-        <div class="button-group">
-            <button class="btn" id="playBtn">Play Game</button>
-            <button class="btn" id="howToPlayBtn">How to Play</button> <!-- New button -->
+        <div id="loadingContainer" style="width: 80%; background-color: #333; height: 20px; border-radius: 10px; overflow: hidden; margin-bottom: 20px;">
+            <div id="loadingFill" style="width: 0%; height: 100%; background-color: var(--primary-color); border-radius: 10px; transition: width 0.3s ease;"></div>
+        </div>
+        <span id="loadingText" style="font-size: 1rem; margin-bottom: 20px;">Loading assets... 0%</span>
+        <div class="button-group" id="mainButtons">
+            <button class="btn" id="playBtn" disabled>Play Game</button>
+            <button class="btn" id="howToPlayBtn" disabled>How to Play</button>
         </div>
         <!-- Leaderboard will be shown here by JS -->
         <ul id="lbListEl" style="color: var(--light-gray); list-style: none; padding: 0; margin-top: 20px; font-size: 1rem;">
@@ -512,6 +516,8 @@
     class GameState {
       constructor() {
         this.reset();
+        this.loadingProgress = 0;
+        this.loadingSteps = 0; // Will be set dynamically based on init stages
       }
 
       reset() {
@@ -1211,10 +1217,10 @@
      constructor() {
        // Create audio elements with fallback
        this.sounds = {};
-       this.createSound('shoot', 'data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdJivrJBhNjVgodDbq2EcBj+a2/LDciUFLIHO8tiJNwgZaLvt559NEAxQp+PwtmMcBjiR1/LMeSwFJHfH8N2QQAoUXrTp66hVFApGn+X0wl0bCjyR2/LNeSMGIHfH8N2QQAoUXrTp66hVFApGn+X0wl0bCjyR2/LNeSMGIHfH8N2QQAoUXrTp66hVFApGn+X0wl0bCjyR2/LNeSMGIHfH8N2QQAoUXrTp66hVFApGn+X0wl0bCjyR2/LNeSMGIHfH8N2QQAoUXrTp66hVFApGn+X0wl0bCjyR2/LNeSMGIHfH8N2QQAoUXrTp66hVFApGn+X0wl0bCg==');
+       this.createSound('shoot', 'data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdJivrJBhNjVgodDbq2EcBj+a2/LDciUFLIHO8tiJNwgZaLvt559NEAxQp+PwtmMcBjiR1/LMeSwFJHfH8N2QQAoUXrTp66hVFApGn+X0wl0bCjyR2/LNeSMGIHfH8N2QQAoUXrTp66hVFApGn+X0wl0bCjyR2/LNeSMGIHfH8N2QQAoUXrTp66hVFApGn+X0wl0bCjyR2/LNeSMGIHfH8N2QQAoUXrTp66hVFApGn+X0wl0bCjyR2/LNeSMGIHfH8N2QQAoUXrTp66hVFApGn+X0wl0bCjyR2/LNeSMGIHfH8N2QQAoUXrTp66hVFApGn+X0wl0bCjyR2/LNeSMGIHfH8N2QQAoUXrTp66hVFApGn+X0wl0bCg==');
        this.createSound('explosion', 'data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdJivrJBhNjVgodDbq2EcBj+a2/LDciUFLIHO8tiJNwgZaLvt559NEAxQp+PwtmMcBjiR1/LMeSwFJHfH8N2QQAoUXrTp66hVFApGn+X0wl0bCjyR2/LNeSMGIHfH8N2QQAoUXrTp66hVFApGn+X0wl0bCjyR2/LNeSMGIHfH8N2QQAoUXrTp66hVFApGn+X0wl0bCjyR2/LNeSMGIHfH8N2QQAoUXrTp66hVFApGn+X0wl0bCjyR2/LNeSMGIHfH8N2QQAoUXrTp66hVFApGn+X0wl0bCjyR2/LNeSMGIHfH8N2QQAoUXrTp66hVFApGn+X0wl0bCjyR2/LNeSMGIHfH8N2QQAoUXrTp66hVFApGn+X0wl0bCg==');
        this.createSound('powerup', 'data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdJivrJBhNjVgodDbq2EcBj+a2/LDciUFLIHO8tiJNwgZaLvt559NEAxQp+PwtmMcBjiR1/LMeSwFJHfH8N2QQAoUXrTp66hVFApGn+X0wl0bCjyR2/LNeSMGIHfH8N2QQAoUXrTp66hVFApGn+X0wl0bCjyR2/LNeSMGIHfH8N2QQAoUXrTp66hVFApGn+X0wl0bCjyR2/LNeSMGIHfH8N2QQAoUXrTp66hVFApGn+X0wl0bCjyR2/LNeSMGIHfH8N2QQAoUXrTp66hVFApGn+X0wl0bCjyR2/LNeSMGIHfH8N2QQAoUXrTp66hVFApGn+X0wl0bCg==');
-       this.createSound('gameover', 'data:audio/wav;base66,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdJivrJBhNjVgodDbq2EcBj+a2/LDciUFLIHO8tiJNwgZaLvt559NEAxQp+PwtmMcBjiR1/LMeSwFJHfH8N2QQAoUXrTp66hVFApGn+X0wl0bCjyR2/LNeSMGIHfH8N2QQAoUXrTp66hVFApGn+X0wl0bCjyR2/LNeSMGIHfH8N2QQAoUXrTp66hVFApGn+X0wl0bCjyR2/LNeSMGIHfH8N2QQAoUXrTp66hVFApGn+X0wl0bCjyR2/LNeSMGIHfH8N2QQAoUXrTp66hVFApGn+X0wl0bCg==');
+       this.createSound('gameover', 'data:audio/wav;base66,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdJivrJBhNjVgodDbq2EcBj+a2/LDciUFLIHO8tiJNwgZaLvt559NEAxQp+PwtmMcBjiR1/LMeSwFJHfH8N2QQAoUXrTp66hVFApGn+X0wl0bCjyR2/LNeSMGIHfH8N2QQAoUXrTp66hVFApGn+X0wl0bCjyR2/LNeSMGIHfH8N2QQAoUXrTp66hVFApGn+X0wl0bCjyR2/LNeSMGIHfH8N2QQAoUXrTp66hVFApGn+X0wl0bCjyR2/LNeSMGIHfH8N2QQAoUXrTp66hVFApGn+X0wl0bCjyR2/LNeSMGIHfH8N2QQAoUXrTp66hVFApGn+X0wl0bCg==');
      }
 
      createSound(name, dataUrl) {
@@ -1469,7 +1475,12 @@
          pauseOverlay: document.getElementById('pauseOverlay'),
          minimap: document.getElementById('minimap'),
          damageFlash: document.getElementById('damageFlash'),
-         lbListEl: document.getElementById('lbListEl') // Leaderboard list element
+         lbListEl: document.getElementById('lbListEl'), // Leaderboard list element
+         loadingContainer: document.getElementById('loadingContainer'), // New
+         loadingFill: document.getElementById('loadingFill'), // New
+         loadingText: document.getElementById('loadingText'), // New
+         playBtn: document.getElementById('playBtn'), // New
+         howToPlayBtn: document.getElementById('howToPlayBtn') // New
        };
        
        this.killFeedMessages = [];
@@ -1674,6 +1685,19 @@
        ctx.beginPath();
        ctx.arc(playerPos.x, playerPos.y, 6, 0, Math.PI * 2);
        ctx.fill();
+
+       // Draw player's crosshair direction
+       const playerYaw = player.mesh.rotation.y;
+       const directionLength = 15; // Length of the direction line on minimap
+       const endX = playerPos.x + directionLength * Math.sin(playerYaw);
+       const endY = playerPos.y - directionLength * Math.cos(playerYaw); // Y-axis is inverted on canvas
+
+       ctx.strokeStyle = '#fff';
+       ctx.lineWidth = 2;
+       ctx.beginPath();
+       ctx.moveTo(playerPos.x, playerPos.y);
+       ctx.lineTo(endX, endY);
+       ctx.stroke();
        
        // Draw enemies
        enemies.forEach(enemy => {
@@ -1740,6 +1764,21 @@
             });
         }
      }
+
+     updateLoadingProgress(currentStep, totalSteps) {
+        const percentage = Math.floor((currentStep / totalSteps) * 100);
+        this.elements.loadingFill.style.width = percentage + '%';
+        this.elements.loadingText.textContent = `Loading assets... ${percentage}%`;
+        if (percentage >= 100) {
+            this.elements.loadingText.textContent = 'Loading complete!';
+        }
+    }
+
+    enablePlayButtons() {
+        this.elements.playBtn.disabled = false;
+        this.elements.howToPlayBtn.disabled = false;
+        this.elements.playBtn.textContent = 'Play Game'; // Ensure text is correct
+    }
    }
 
    // ===================== Main Game Class =====================
@@ -1751,6 +1790,9 @@
      init() {
        // Initialize gameState first
        gameState = new GameState(); 
+       gameState.loadingSteps = 4; // 3 main setup steps + 1 for final delay
+       ui = new UI(); // Initialize UI here so it can update loading bar
+       ui.updateLoadingProgress(0, gameState.loadingSteps);
 
        this.setupThreeJS();
        this.createWorld();
@@ -1773,6 +1815,9 @@
        document.body.appendChild(renderer.domElement);
        
        clock = new THREE.Clock();
+
+       gameState.loadingProgress++;
+       ui.updateLoadingProgress(gameState.loadingProgress, gameState.loadingSteps);
      }
 
      createWorld() {
@@ -1803,6 +1848,9 @@
        this.createBoundaries();
        this.createSafeZones();
        this.setupStarfield(); // Call the new starfield setup here
+
+       gameState.loadingProgress++;
+       ui.updateLoadingProgress(gameState.loadingProgress, gameState.loadingSteps);
      }
 
      createBoundaries() {
@@ -1909,6 +1957,9 @@
        
        // Spawn initial enemies (first wave)
        this.spawnEnemyWave();
+
+       gameState.loadingProgress++;
+       ui.updateLoadingProgress(gameState.loadingProgress, gameState.loadingSteps);
      }
 
      generateObstacles() {
@@ -1975,7 +2026,7 @@
        powerUpManager = new PowerUpManager();
        audioManager = new AudioManager();
        inputManager = new InputManager();
-       ui = new UI();
+       // ui = new UI(); // UI is initialized earlier now
      }
 
      setupEventListeners() {
@@ -1990,7 +2041,15 @@
      }
 
      start() {
-       this.gameLoop();
+       // Final loading step
+       gameState.loadingProgress++;
+       ui.updateLoadingProgress(gameState.loadingProgress, gameState.loadingSteps);
+
+       // Add 1-second delay before enabling buttons
+       setTimeout(() => {
+           ui.enablePlayButtons();
+       }, 1000);
+       this.gameLoop(); // Keep game loop running for animations even on home screen
      }
 
      gameLoop() {
@@ -2206,6 +2265,27 @@
        
        // Go back to the home screen
        ui.showHomeScreen(); 
+
+       // Re-initiate the loading sequence for the new game
+       gameState.loadingSteps = 4; 
+       gameState.loadingProgress = 0;
+       ui.updateLoadingProgress(0, gameState.loadingSteps);
+       ui.elements.playBtn.disabled = true;
+       ui.elements.howToPlayBtn.disabled = true;
+       
+       // Simulate loading for restart (small delays for visual effect)
+       setTimeout(() => {
+           gameState.loadingProgress++; ui.updateLoadingProgress(gameState.loadingProgress, gameState.loadingSteps);
+           setTimeout(() => {
+               gameState.loadingProgress++; ui.updateLoadingProgress(gameState.loadingProgress, gameState.loadingSteps);
+               setTimeout(() => {
+                   gameState.loadingProgress++; ui.updateLoadingProgress(gameState.loadingProgress, gameState.loadingSteps);
+                   setTimeout(() => { // Final 1-second delay
+                       ui.enablePlayButtons();
+                   }, 1000);
+               }, 100); // Small delay for each step
+           }, 100);
+       }, 100); // Initial small delay
      }
 
      updateStarfield(delta) {
