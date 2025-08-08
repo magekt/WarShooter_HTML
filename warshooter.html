@@ -96,11 +96,32 @@
             height: 100%;
             background: #000;
             display: flex;
+            flex-direction: column; /* Allow stacking of text and bar */
             justify-content: center;
             align-items: center;
             color: #fff;
             font-size: 2rem;
             z-index: 101;
+        }
+
+        #loadingBarContainer {
+            width: 80%;
+            max-width: 400px; /* Limit max width for better appearance */
+            background: #333;
+            height: 20px;
+            border-radius: 10px;
+            overflow: hidden;
+            margin-top: 20px;
+            border: 1px solid #00ffff; /* Cyan border */
+            box-shadow: 0 0 8px rgba(0, 255, 255, 0.5); /* Cyan glow */
+        }
+
+        #loadingBarFill {
+            width: 0%;
+            background: linear-gradient(to right, #00ffff, #007bff); /* Cyan to blue gradient */
+            height: 100%;
+            border-radius: 10px;
+            transition: width 0.5s ease-out; /* Smooth transition for fill */
         }
 
         /* Mobile Controls Styling */
@@ -250,15 +271,18 @@
             transition: all 0.3s ease;
             text-transform: uppercase;
             letter-spacing: 2px;
+            /* Disable button initially */
+            opacity: 0.5;
+            cursor: not-allowed;
         }
 
-        #startButton:hover {
+        #startButton:not([disabled]):hover {
             background: linear-gradient(45deg, #0056b3, #0099cc);
             box-shadow: 0 12px 20px rgba(0, 123, 255, 0.6);
             transform: translateY(-3px);
         }
 
-        #startButton:active {
+        #startButton:not([disabled]):active {
             transform: translateY(1px);
             box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
         }
@@ -343,12 +367,17 @@
     </style>
 </head>
 <body>
-    <div class="loading-screen" id="loadingScreen">Loading Game...</div>
+    <div class="loading-screen" id="loadingScreen">
+        Loading Game...
+        <div id="loadingBarContainer">
+            <div id="loadingBarFill"></div>
+        </div>
+    </div>
 
     <!-- Home Screen -->
     <div id="homeScreen">
         <h1>WAR ZONE TACTICAL SHOOTER</h1>
-        <button id="startButton">Start Game</button>
+        <button id="startButton" disabled>Start Game</button>
     </div>
 
     <!-- Portrait Message for Mobile -->
@@ -412,11 +441,13 @@
         const MULTI_TARGET_DURATION = 8; // Increased seconds for blue zone effect
         const MULTI_TARGET_COUNT = 3; // Number of enemies to target in blue zone
         const POWERUP_PICKUP_RADIUS = 5; // Increased radius for picking up power-ups
+        const DAMAGE_SPEED_BOOST_DURATION = 7; // Duration for damage and speed boosts
 
         // --- Three.js Scene Setup ---
         let scene, camera, renderer, clock;
         let dramaOverlay, damageFlash, healthFill, scoreDisplay, pauseButton, volumeSlider;
         let homeScreen, startButton, portraitMessage;
+        let loadingScreen, loadingBarFill; // New loading bar elements
         let cameraShakeIntensity = 0;
         let cameraShakeTime = 0;
         let isGameActive = false;
@@ -485,18 +516,37 @@
         // --- Asset Loading & Preloading (now handles Tone.js setup) ---
         function preloadAssets() {
             console.log("Preloading assets...");
-            const loadingScreen = document.getElementById('loadingScreen');
+            loadingScreen = document.getElementById('loadingScreen');
+            loadingBarFill = document.getElementById('loadingBarFill');
+            
             loadingScreen.style.display = 'flex';
+            loadingBarFill.style.width = '0%'; // Reset loading bar
 
             // Get references to homeScreen and portraitMessage early
             homeScreen = document.getElementById('homeScreen');
             portraitMessage = document.getElementById('portraitMessage');
-            startButton = document.getElementById('startButton'); // Also get startButton here
+            startButton = document.getElementById('startButton'); 
 
-            // Hide loading screen and initialize game visuals
-            loadingScreen.style.display = 'none';
-            init(); // Call init after all global variables are set
-            checkOrientation(); // Check orientation on load
+            // Simulate asset loading progress
+            let progress = 0;
+            const loadingInterval = setInterval(() => {
+                progress += 10;
+                loadingBarFill.style.width = progress + '%';
+                if (progress >= 100) {
+                    clearInterval(loadingInterval);
+                    console.log("Assets loaded.");
+                    init(); // Call init after simulated loading is complete
+
+                    // Add 1-second delay before enabling start button
+                    setTimeout(() => {
+                        startButton.disabled = false;
+                        startButton.style.opacity = 1;
+                        startButton.style.cursor = 'pointer';
+                        loadingScreen.style.display = 'none'; // Hide loading screen
+                        checkOrientation(); // Check orientation to show home screen or portrait message
+                    }, 1000); // 1-second delay
+                }
+            }, 100); // Update every 100ms
         }
 
         // --- Initialization ---
@@ -506,8 +556,8 @@
             damageFlash = document.getElementById('damageFlash');
             healthFill = document.getElementById('healthFill');
             scoreDisplay = document.getElementById('scoreDisplay');
-            pauseButton = document.getElementById('pauseButton'); // Get pause button reference
-            volumeSlider = document.getElementById('volumeSlider'); // Get volume slider reference
+            pauseButton = document.getElementById('pauseButton'); 
+            volumeSlider = document.getElementById('volumeSlider'); 
             
             // Scene
             scene = new THREE.Scene();
@@ -597,9 +647,16 @@
             playerMesh.position.set(0, 0, 0); // Group position
             scene.add(playerMesh);
 
-            // Shield visual for player (attach to the group)
+            // Shield visual for player (attach to the group) - Changed to MeshPhongMaterial
             const shieldGeometry = new THREE.SphereGeometry(3, 16, 16); // Slightly larger for the group
-            const shieldMaterial = new THREE.MeshBasicMaterial({ color: 0x00ffff, opacity: 0.3, transparent: true, blending: THREE.AdditiveBlending });
+            const shieldMaterial = new THREE.MeshPhongMaterial({ 
+                color: 0x00ffff, 
+                opacity: 0.3, 
+                transparent: true, 
+                blending: THREE.AdditiveBlending,
+                emissive: 0x00ffff, // Added emissive property
+                emissiveIntensity: 1.0 // Added emissive intensity
+            });
             playerShieldMesh = new THREE.Mesh(shieldGeometry, shieldMaterial);
             playerMesh.add(playerShieldMesh);
 
@@ -958,17 +1015,48 @@
         }
 
         function drawBoundaries() {
-            const material = new THREE.LineBasicMaterial({ color: 0xcccccc });
-            const points = [
-                new THREE.Vector3(WORLD_MIN, 0.2, WORLD_MIN),
-                new THREE.Vector3(WORLD_BOUNDARY, 0.2, WORLD_MIN),
-                new THREE.Vector3(WORLD_BOUNDARY, 0.2, WORLD_BOUNDARY),
-                new THREE.Vector3(WORLD_MIN, 0.2, WORLD_BOUNDARY),
-                new THREE.Vector3(WORLD_MIN, 0.2, WORLD_MIN)
-            ];
-            const geometry = new THREE.BufferGeometry().setFromPoints(points);
-            const line = new THREE.Line(geometry, material);
-            scene.add(line);
+            // Remove existing boundaries if resetting
+            scene.children.filter(obj => obj.userData.isBoundary).forEach(obj => scene.remove(obj));
+
+            const WALL_HEIGHT = 10;
+            const WALL_THICKNESS = 2;
+            const wallMaterial = new THREE.MeshPhongMaterial({ color: 0x666666, shininess: 30 });
+
+            // North Wall (-Z)
+            const northWall = new THREE.Mesh(
+                new THREE.BoxGeometry(WORLD_BOUNDARY * 2 + WALL_THICKNESS * 2, WALL_HEIGHT, WALL_THICKNESS),
+                wallMaterial
+            );
+            northWall.position.set(0, WALL_HEIGHT / 2, WORLD_MIN - WALL_THICKNESS / 2);
+            northWall.userData.isBoundary = true;
+            scene.add(northWall);
+
+            // South Wall (+Z)
+            const southWall = new THREE.Mesh(
+                new THREE.BoxGeometry(WORLD_BOUNDARY * 2 + WALL_THICKNESS * 2, WALL_HEIGHT, WALL_THICKNESS),
+                wallMaterial
+            );
+            southWall.position.set(0, WALL_HEIGHT / 2, WORLD_BOUNDARY + WALL_THICKNESS / 2);
+            southWall.userData.isBoundary = true;
+            scene.add(southWall);
+
+            // West Wall (-X)
+            const westWall = new THREE.Mesh(
+                new THREE.BoxGeometry(WALL_THICKNESS, WALL_HEIGHT, WORLD_BOUNDARY * 2),
+                wallMaterial
+            );
+            westWall.position.set(WORLD_MIN - WALL_THICKNESS / 2, WALL_HEIGHT / 2, 0);
+            westWall.userData.isBoundary = true;
+            scene.add(westWall);
+
+            // East Wall (+X)
+            const eastWall = new THREE.Mesh(
+                new THREE.BoxGeometry(WALL_THICKNESS, WALL_HEIGHT, WORLD_BOUNDARY * 2),
+                wallMaterial
+            );
+            eastWall.position.set(WORLD_BOUNDARY + WALL_THICKNESS / 2, WALL_HEIGHT / 2, 0);
+            eastWall.userData.isBoundary = true;
+            scene.add(eastWall);
 
             // Red zone is fixed in the middle and spawned only once here
             spawnFixedHazardZone(new THREE.Vector3(0, 0.1, 0));
@@ -1094,8 +1182,13 @@
             spike4.position.set(0, 1, -1.5); // Front
             enemyGroup.add(spike4);
 
+            // Enemy Eye - Changed to MeshPhongMaterial
             const enemyEyeGeometry = new THREE.SphereGeometry(0.5, 8, 8);
-            const enemyEyeMaterial = new THREE.MeshBasicMaterial({ color: 0x00ff00, emissive: 0x00ff00, emissiveIntensity: 1.5 }); // Stronger green glow
+            const enemyEyeMaterial = new THREE.MeshPhongMaterial({ 
+                color: 0x00ff00, 
+                emissive: 0x00ff00, 
+                emissiveIntensity: 1.5 // Emissive intensity for the glow
+            }); 
             const enemyEye = new THREE.Mesh(enemyEyeGeometry, enemyEyeMaterial);
             enemyEye.position.set(0, 1, -2.5); // Position in front of the body, further out
             enemyGroup.add(enemyEye);
@@ -1155,7 +1248,7 @@
         function getBulletMesh(isPlayerBullet) {
             let bullet;
             if (bulletPool.length > 0) {
-                bullet = bulletPool.pop();
+                bullet = bulletPool.pop(); 
                 bullet.visible = true;
                 console.log("Reusing bullet from pool. Pool size:", bulletPool.length);
             } else {
@@ -1283,18 +1376,34 @@
             // Player bobbing animation
             playerMesh.position.y = 1 + Math.sin(performance.now() * 0.005) * 0.2; // Subtle bobbing
 
-            // Player turret rotation to face mouse/target (simplified for now, or based on movement direction)
-            // For a more advanced game, you'd calculate this based on mouse position or target.
-            // For now, let's make it rotate slightly based on horizontal movement
-            // playerMesh.children[1] is the turret
-            // playerMesh.children[1] is playerTurretBase, its child is playerTurretTop, its child is playerBarrel
-            const playerTurretTop = playerMesh.children[1].children[0];
-            if (keys['KeyA']) {
-                playerTurretTop.rotation.y = -Math.PI / 8; // Rotate turret left
-            } else if (keys['KeyD']) {
-                playerTurretTop.rotation.y = Math.PI / 8; // Rotate turret right
+            // Player turret rotation to face closest enemy when shooting
+            const playerTurretTop = playerMesh.children[1].children[0]; // Access the turret top
+            let closestEnemy = null;
+            let minDistance = Infinity;
+            enemies.forEach(enemy => {
+                const distance = playerMesh.position.distanceTo(enemy.mesh.position);
+                if (distance < minDistance) {
+                    minDistance = distance;
+                    closestEnemy = enemy;
+                }
+            });
+
+            if (closestEnemy) {
+                // Calculate direction from turret to enemy
+                const targetDirection = new THREE.Vector3().subVectors(closestEnemy.mesh.position, playerTurretTop.getWorldPosition(new THREE.Vector3())).normalize();
+                
+                // Convert world direction to local direction relative to playerMesh
+                const localTargetDirection = playerMesh.worldToLocal(closestEnemy.mesh.position.clone()).normalize();
+                
+                // Calculate angle for turret rotation around Y-axis
+                // Use atan2 to get the angle from the player's forward direction (negative Z in local space)
+                const angle = Math.atan2(localTargetDirection.x, localTargetDirection.z);
+                
+                // Smoothly interpolate the turret's Y-rotation
+                playerTurretTop.rotation.y = THREE.MathUtils.lerp(playerTurretTop.rotation.y, angle, 0.1); // Lerp for smooth rotation
             } else {
-                playerTurretTop.rotation.y = 0; // Reset turret
+                // If no enemies, reset turret to face forward (0 rotation)
+                playerTurretTop.rotation.y = THREE.MathUtils.lerp(playerTurretTop.rotation.y, 0, 0.1);
             }
 
 
