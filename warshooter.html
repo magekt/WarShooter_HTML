@@ -480,9 +480,8 @@
         const playerShootCooldown = 0.2;
 
         let enemySpawnTimer = 0;
-        // To reduce spawn rate by 89%, the interval should be original_interval / (1 - 0.89)
-        // So, 5 / 0.11 = ~45.45 seconds.
-        const enemySpawnInterval = 45.45; 
+        // Reduced to 25 seconds for fewer enemies
+        const enemySpawnInterval = 25; 
 
         let scoreMultiplierActive = false;
         let scoreMultiplierEndTime = 0;
@@ -499,12 +498,14 @@
         let currentWave = 0;
         let enemiesInCurrentWave = 0;
         let enemiesRemainingInWave = 0;
+        // Reduced number of enemies per wave significantly
         const WAVE_CONFIG = [
-            { numEnemies: 5, bossChance: 0.1, powerUpChance: 0.5 },
-            { numEnemies: 8, bossChance: 0.2, powerUpChance: 0.6 },
-            { numEnemies: 12, bossChance: 0.3, powerUpChance: 0.7 },
-            { numEnemies: 15, bossChance: 0.4, powerUpChance: 0.8 },
-            { numEnemies: 20, bossChance: 0.5, powerUpChance: 0.9, finalWave: true }
+            { numEnemies: 3, bossChance: 0.1, powerUpChance: 0.5 },
+            { numEnemies: 5, bossChance: 0.2, powerUpChance: 0.6 },
+            { numEnemies: 7, bossChance: 0.3, powerUpChance: 0.7 },
+            { numEnemies: 10, bossChance: 0.4, powerUpChance: 0.8 },
+            { numEnemies: 12, bossChance: 0.5, powerUpChance: 0.9 }
+            // Removed finalWave: true to allow indefinite play
         ];
 
         // --- Audio Elements (using Tone.js) ---
@@ -721,14 +722,16 @@
             document.getElementById('mobileControls').style.display = 'flex';
             renderer.domElement.style.display = 'block'; // Show canvas
 
-            // Fullscreen request removed due to browser permissions policy.
-            // The game will run in the current windowed mode.
+            // Immediately reset the game visuals and state to appear on screen
+            resetGame();
 
-            // Initialize Tone.js and audio components ONLY after user gesture
-            if (!shootSound) { // Only initialize if not already done
+            // Initialize Tone.js and audio components ONLY if they haven't been initialized
+            // This happens on the first user gesture (the button click)
+            if (!shootSound) { 
                 try {
                     Tone.start().then(() => {
                         console.log("AudioContext started successfully on user gesture.");
+                        // Initialize all Tone.js synths *inside* this success callback
                         shootSound = new Tone.PolySynth(Tone.MembraneSynth, {
                             pitchDecay: 0.005,
                             octaves: 10,
@@ -802,22 +805,20 @@
                         // Set initial master volume based on slider
                         Tone.Master.volume.value = Tone.gainToDb(parseFloat(volumeSlider.value));
 
-                        resetGame(); // Reset and start the game after audio is ready
                     }).catch(e => {
                         console.error("Failed to start AudioContext on user gesture:", e);
                         showDramaMessage("Audio failed to start. Please try refreshing.", 3000 / 2); // Halved duration
-                        resetGame(); // Still start the game even if audio fails
                     });
                 } catch (e) {
                     console.error("Error initializing Tone.js:", e);
                     showDramaMessage("Error with audio system. Try refreshing.", 3000 / 2); // Halved duration
-                    resetGame(); // Still start the game
                 }
             } else {
-                // AudioContext is already running (e.g., if game was restarted)
-                resetGame();
+                // If audio already initialized, just ensure transport is started (in case of previous pause)
+                if (Tone.Transport.state !== 'started') {
+                    Tone.Transport.start();
+                }
             }
-            // Ensure canvas size is updated after fullscreen attempt (even if not fullscreen)
             onWindowResize();
         }
 
@@ -899,12 +900,27 @@
             updateUI();
             playerMesh.position.set(0, 0, 0); // Reset player position for the new model
 
-            // Spawn initial obstacles (more varied sizes)
+            // Spawn initial obstacles (which can now be used for cover)
             spawnObstacle(new THREE.Vector3(-30, 2, 0), 5, 4, 5);
             spawnObstacle(new THREE.Vector3(30, 2, 0), 6, 3, 6);
             spawnObstacle(new THREE.Vector3(0, 2, -30), 4, 5, 4);
             spawnObstacle(new THREE.Vector3(0, 2, 30), 7, 2, 7);
             spawnObstacle(new THREE.Vector3(-45, 2, 45), 3, 6, 3);
+            
+            // --- NEW INTERNAL COVER WALLS ---
+            // Central cross-shaped cover
+            spawnObstacle(new THREE.Vector3(0, 2, 15), 15, 3, 3); // Horizontal part
+            spawnObstacle(new THREE.Vector3(15, 2, 0), 3, 3, 15); // Vertical part
+            spawnObstacle(new THREE.Vector3(-15, 2, 0), 3, 3, 15); // Vertical part
+            spawnObstacle(new THREE.Vector3(0, 2, -15), 15, 3, 3); // Horizontal part
+
+            // Smaller scattered cover points
+            spawnObstacle(new THREE.Vector3(-60, 2, -60), 8, 3, 8);
+            spawnObstacle(new THREE.Vector3(60, 2, -60), 8, 3, 8);
+            spawnObstacle(new THREE.Vector3(-60, 2, 60), 8, 3, 8);
+            spawnObstacle(new THREE.Vector3(60, 2, 60), 8, 3, 8);
+            // --- END NEW INTERNAL COVER WALLS ---
+
 
             // Spawn one health pack at the start
             spawnRandomPowerUp('healthPack');
@@ -921,22 +937,26 @@
         function startNextWave() {
             currentWave++;
             console.log(`Starting Wave ${currentWave}`);
-            if (currentWave > WAVE_CONFIG.length) {
-                victory();
-                return;
+            
+            let waveIndex = currentWave - 1;
+            // If we exceed predefined waves, loop back to the last wave config
+            if (waveIndex >= WAVE_CONFIG.length) {
+                waveIndex = WAVE_CONFIG.length - 1; // Use the last wave config indefinitely
+                console.log(`Continuing with scaled Wave ${currentWave} (using config from wave ${WAVE_CONFIG.length})`);
+                showDramaMessage(`Wave ${currentWave} Incoming! Difficulty Scaled!`, 2000 / 2);
+            } else {
+                showDramaMessage(`Wave ${currentWave} Incoming!`, 2000 / 2);
             }
+
+            const wave = WAVE_CONFIG[waveIndex];
+            enemiesInCurrentWave = wave.numEnemies;
+            enemiesRemainingInWave = wave.numEnemies;
+            enemySpawnTimer = 0; // Reset timer for wave-based spawning
 
             // Full health recovery at the start of each wave
             playerHealth = 100;
             updateUI();
             showDramaMessage("Health Fully Restored!", 500 / 2); // Reduced duration
-
-            const wave = WAVE_CONFIG[currentWave - 1];
-            enemiesInCurrentWave = wave.numEnemies;
-            enemiesRemainingInWave = wave.numEnemies;
-            enemySpawnTimer = 0; // Reset timer for wave-based spawning
-
-            showDramaMessage(`Wave ${currentWave} Incoming!`, 2000 / 2); // Kept longer for impact
 
             // Remove old dynamic zones and spawn new ones for the new wave
             if (greenZoneMesh) { scene.remove(greenZoneMesh.mesh); greenZoneMesh = null; }
@@ -975,20 +995,10 @@
         }
 
         function victory() {
-            console.log(`Victory! Final Score: ${playerScore}`);
-            isGameActive = false;
-            showDramaMessage("VICTORY! Score: " + playerScore, 5000 / 2); // Kept longer for impact
-            // Hide game elements and show home screen after victory
-            document.getElementById('gameUI').style.display = 'none';
-            document.getElementById('mobileControls').style.display = 'none';
-            renderer.domElement.style.display = 'none';
-            if (Tone.Transport.state === 'started') {
-                Tone.Transport.stop(); // Stop audio on victory
-            }
-            setTimeout(() => {
-                homeScreen.style.display = 'flex';
-                checkOrientation(); // Re-check orientation for home screen
-            }, 2500); // Halved delay
+            // This function is no longer intended to end the game but could be repurposed
+            // for, e.g., showing a "Wave Cleared!" message more prominently if needed.
+            // For an endless game, we just continue to the next wave.
+            console.log(`Wave ${currentWave} Cleared! Preparing for next wave.`);
         }
 
         function updateUI() {
@@ -1014,13 +1024,30 @@
             keys[event.code] = false;
         }
 
+        /**
+         * Function to get the bounding box of a Three.js object (mesh or group).
+         * This is essential for accurate collision detection.
+         * @param {THREE.Object3D} object - The Three.js object to get the bounding box for.
+         * @returns {THREE.Box3} The bounding box of the object.
+         */
+        function getBoundingBox(object) {
+            const box = new THREE.Box3().setFromObject(object);
+            return box;
+        }
+
         function drawBoundaries() {
             // Remove existing boundaries if resetting
             scene.children.filter(obj => obj.userData.isBoundary).forEach(obj => scene.remove(obj));
 
             const WALL_HEIGHT = 10;
             const WALL_THICKNESS = 2;
-            const wallMaterial = new THREE.MeshPhongMaterial({ color: 0x666666, shininess: 30 });
+            // Updated wall material for better visibility
+            const wallMaterial = new THREE.MeshPhongMaterial({ 
+                color: 0x888888, // Brighter grey
+                emissive: 0x0000ff, // Subtle blue glow
+                emissiveIntensity: 0.3, 
+                shininess: 30 
+            });
 
             // North Wall (-Z)
             const northWall = new THREE.Mesh(
@@ -1029,6 +1056,7 @@
             );
             northWall.position.set(0, WALL_HEIGHT / 2, WORLD_MIN - WALL_THICKNESS / 2);
             northWall.userData.isBoundary = true;
+            obstacles.push({ mesh: northWall, health: Infinity }); // Make boundaries unbreakable
             scene.add(northWall);
 
             // South Wall (+Z)
@@ -1038,6 +1066,7 @@
             );
             southWall.position.set(0, WALL_HEIGHT / 2, WORLD_BOUNDARY + WALL_THICKNESS / 2);
             southWall.userData.isBoundary = true;
+            obstacles.push({ mesh: southWall, health: Infinity }); // Make boundaries unbreakable
             scene.add(southWall);
 
             // West Wall (-X)
@@ -1047,6 +1076,7 @@
             );
             westWall.position.set(WORLD_MIN - WALL_THICKNESS / 2, WALL_HEIGHT / 2, 0);
             westWall.userData.isBoundary = true;
+            obstacles.push({ mesh: westWall, health: Infinity }); // Make boundaries unbreakable
             scene.add(westWall);
 
             // East Wall (+X)
@@ -1056,6 +1086,7 @@
             );
             eastWall.position.set(WORLD_BOUNDARY + WALL_THICKNESS / 2, WALL_HEIGHT / 2, 0);
             eastWall.userData.isBoundary = true;
+            obstacles.push({ mesh: eastWall, health: Infinity }); // Make boundaries unbreakable
             scene.add(eastWall);
 
             // Red zone is fixed in the middle and spawned only once here
@@ -1120,32 +1151,80 @@
         }
 
         function spawnObstacle(position, width, height, depth) {
-            // Randomize obstacle shape slightly
+            // Only Hexagonal (Dodecahedron) should be breakable. Cuboid (Box) should not.
             const isCube = Math.random() > 0.5;
-            const geometry = isCube ? new THREE.BoxGeometry(width, height, depth) : new THREE.DodecahedronGeometry(width / 2); // Dodecahedron for variety
+            let geometry, health;
+
+            if (isCube) {
+                geometry = new THREE.BoxGeometry(width, height, depth);
+                health = Infinity; // Unbreakable
+                console.log("Spawned unbreakable cuboid obstacle.");
+            } else {
+                geometry = new THREE.DodecahedronGeometry(width / 2);
+                health = 100; // Breakable
+                console.log("Spawned breakable dodecahedron obstacle.");
+            }
+            
             const mesh = new THREE.Mesh(
                 geometry,
                 new THREE.MeshPhongMaterial({ color: OBSTACLE_COLOR })
             );
             mesh.position.copy(position);
             scene.add(mesh);
-            obstacles.push({ mesh: mesh, health: 100 });
+            obstacles.push({ mesh: mesh, health: health });
             console.log(`Spawned obstacle at X:${position.x.toFixed(2)}, Y:${position.y.toFixed(2)}, Z:${position.z.toFixed(2)}`);
         }
 
         function spawnRandomEnemy(bossChance) {
             const spawnRange = WORLD_BOUNDARY - WORLD_MIN - 20; // Keep enemies away from edges
-            const spawnX = Math.random() * spawnRange + WORLD_MIN + 10;
-            const spawnZ = Math.random() * spawnRange + WORLD_MIN + 10;
-            const spawnPosition = new THREE.Vector3(spawnX, 1, spawnZ);
+            const enemyRadius = 2; // Radius of the enemy OctahedronGeometry(2)
+            const enemyApproxHeight = 2; // Approximate height of the enemy mesh
 
-            // Ensure spawn is not too close to player
-            if (playerMesh.position.distanceTo(spawnPosition) < 40) {
-                // If too close, try again or adjust
-                return spawnRandomEnemy(bossChance); // Recursive call to find a better spot
+            let validPosition = false;
+            let attempts = 0;
+            const minSpawnDistanceToPlayer = 40; // Minimum distance from player
+
+            let spawnPosition = new THREE.Vector3(); // Declare outside loop
+
+            while (!validPosition && attempts < 20) { // Increased attempts for better chances
+                const currentSpawnX = Math.random() * spawnRange + WORLD_MIN + 10;
+                const currentSpawnZ = Math.random() * spawnRange + WORLD_MIN + 10;
+                spawnPosition.set(currentSpawnX, enemyApproxHeight / 2, currentSpawnZ); // Set Y to half enemy height
+
+                let tooClose = false;
+
+                // Check distance to player
+                if (playerMesh.position.distanceTo(spawnPosition) < minSpawnDistanceToPlayer) {
+                    tooClose = true;
+                } else {
+                    // Create a temporary bounding box for the potential new enemy at the test spawn position
+                    const tempEnemyBox = new THREE.Box3(
+                        new THREE.Vector3(spawnPosition.x - enemyRadius, spawnPosition.y - enemyApproxHeight / 2, spawnPosition.z - enemyRadius),
+                        new THREE.Vector3(spawnPosition.x + enemyRadius, spawnPosition.y + enemyApproxHeight / 2, spawnPosition.z + enemyRadius)
+                    );
+
+                    // Check collision with existing obstacles
+                    for (const obstacle of obstacles) {
+                        if (!obstacle.mesh.visible || obstacle.health <= 0) continue; // Skip destroyed/invisible obstacles
+
+                        const obstacleBox = getBoundingBox(obstacle.mesh);
+                        if (tempEnemyBox.intersectsBox(obstacleBox)) {
+                            tooClose = true;
+                            break;
+                        }
+                    }
+                }
+                
+                if (!tooClose) {
+                    validPosition = true;
+                }
+                attempts++;
             }
-
-            spawnEnemy(spawnPosition, Math.random() < bossChance);
+            if (validPosition) {
+                spawnEnemy(spawnPosition, Math.random() < bossChance);
+            } else {
+                console.warn("Could not find a valid spawn position for enemy after multiple attempts.");
+            }
         }
 
         function spawnEnemy(position, isBoss = false) {
@@ -1349,7 +1428,8 @@
             });
             // Also damage obstacles
             obstacles.forEach(obstacle => {
-                if (playerMesh.position.distanceTo(obstacle.mesh.position) < attackRadius) {
+                // Check if the obstacle is breakable before applying damage
+                if (obstacle.health !== Infinity && playerMesh.position.distanceTo(obstacle.mesh.position) < attackRadius) {
                     obstacle.health -= attackDamage;
                     spawnDamageNumber(attackDamage, obstacle.mesh.position, 0x00ff00);
                     console.log(`Special attack hit obstacle. Obstacle health: ${obstacle.health}`);
@@ -1363,13 +1443,63 @@
 
             const currentSpeed = PLAYER_BASE_SPEED * playerSpeedMultiplier;
             const moveAmount = currentSpeed * delta;
-            let moved = false;
-            if (keys['KeyW']) { playerMesh.position.z -= moveAmount; moved = true; }
-            if (keys['KeyS']) { playerMesh.position.z += moveAmount; moved = true; }
-            if (keys['KeyA']) { playerMesh.position.x -= moveAmount; moved = true; }
-            if (keys['KeyD']) { playerMesh.position.x += moveAmount; moved = true; }
+            
+            const playerMovementVector = new THREE.Vector3(0, 0, 0);
+            if (keys['KeyW']) { playerMovementVector.z -= moveAmount; }
+            if (keys['KeyS']) { playerMovementVector.z += moveAmount; }
+            if (keys['KeyA']) { playerMovementVector.x -= moveAmount; }
+            if (keys['KeyD']) { playerMovementVector.x += moveAmount; }
 
-            // Clamp player position to world boundaries
+            const playerCurrentPos = playerMesh.position.clone();
+            const playerNextPosX = playerCurrentPos.x + playerMovementVector.x;
+            const playerNextPosZ = playerCurrentPos.z + playerMovementVector.z;
+
+            // Get player's current bounding box
+            const playerBox = getBoundingBox(playerMesh);
+
+            // X-axis collision check
+            let collisionX = false;
+            if (playerMovementVector.x !== 0) {
+                const potentialPlayerBoxX = playerBox.clone();
+                potentialPlayerBoxX.translate(new THREE.Vector3(playerMovementVector.x, 0, 0));
+
+                for (const obstacle of obstacles) {
+                    // Skip if the obstacle is not visible or already destroyed
+                    if (!obstacle.mesh.visible || obstacle.health <= 0) continue;
+
+                    const obstacleBox = getBoundingBox(obstacle.mesh);
+                    if (potentialPlayerBoxX.intersectsBox(obstacleBox)) {
+                        collisionX = true;
+                        break;
+                    }
+                }
+            }
+            if (!collisionX) {
+                playerMesh.position.x = playerNextPosX;
+            }
+
+            // Z-axis collision check
+            let collisionZ = false;
+            if (playerMovementVector.z !== 0) {
+                const potentialPlayerBoxZ = playerBox.clone();
+                potentialPlayerBoxZ.translate(new THREE.Vector3(0, 0, playerMovementVector.z));
+
+                for (const obstacle of obstacles) {
+                     // Skip if the obstacle is not visible or already destroyed
+                    if (!obstacle.mesh.visible || obstacle.health <= 0) continue;
+
+                    const obstacleBox = getBoundingBox(obstacle.mesh);
+                    if (potentialPlayerBoxZ.intersectsBox(obstacleBox)) {
+                        collisionZ = true;
+                        break;
+                    }
+                }
+            }
+            if (!collisionZ) {
+                playerMesh.position.z = playerNextPosZ;
+            }
+
+            // Clamp player position to world boundaries AFTER checking internal collisions
             playerMesh.position.x = Math.max(WORLD_MIN, Math.min(WORLD_BOUNDARY, playerMesh.position.x));
             playerMesh.position.z = Math.max(WORLD_MIN, Math.min(WORLD_BOUNDARY, playerMesh.position.z));
 
@@ -1389,20 +1519,35 @@
             });
 
             if (closestEnemy) {
-                // Calculate direction from turret to enemy
-                const targetDirection = new THREE.Vector3().subVectors(closestEnemy.mesh.position, playerTurretTop.getWorldPosition(new THREE.Vector3())).normalize();
+                // Calculate direction vector from player's turret world position to enemy's world position
+                const turretWorldPosition = new THREE.Vector3();
+                playerTurretTop.getWorldPosition(turretWorldPosition); // Get the turret's world position
+
+                const targetVector = new THREE.Vector3().subVectors(closestEnemy.mesh.position, turretWorldPosition);
                 
-                // Convert world direction to local direction relative to playerMesh
-                const localTargetDirection = playerMesh.worldToLocal(closestEnemy.mesh.position.clone()).normalize();
+                // Convert world direction to local direction relative to playerMesh for turret rotation
+                // The turret is a child of playerMesh.playerTurretBase which is a child of playerMesh.
+                // The playerTurretTop is a child of playerTurretBase.
+                // The playerBarrel is a child of playerTurretTop.
+                // So, to get the correct local target vector for playerTurretTop, we need its parent's (playerTurretBase's) world position,
+                // and then calculate the vector to the enemy from there, then convert it to local space.
                 
-                // Calculate angle for turret rotation around Y-axis
-                // Use atan2 to get the angle from the player's forward direction (negative Z in local space)
-                const angle = Math.atan2(localTargetDirection.x, localTargetDirection.z);
+                const playerTurretBaseWorldPosition = new THREE.Vector3();
+                playerMesh.children[1].getWorldPosition(playerTurretBaseWorldPosition);
+
+                const localTargetVector = new THREE.Vector3().subVectors(closestEnemy.mesh.position, playerTurretBaseWorldPosition);
+                playerMesh.children[1].worldToLocal(localTargetVector); // Convert to local space of playerTurretBase
+
+                // Calculate angle for turret rotation around Y-axis based on localTargetVector
+                // The turret's barrel points along its local negative Z-axis when rotation.y is 0.
+                // Math.atan2(x, z) gives the angle from the positive Z-axis towards the positive X-axis.
+                // We want the barrel (which is aligned with negative Z) to point towards the target.
+                let targetAngle = Math.atan2(localTargetVector.x, localTargetVector.z);
                 
                 // Smoothly interpolate the turret's Y-rotation
-                playerTurretTop.rotation.y = THREE.MathUtils.lerp(playerTurretTop.rotation.y, angle, 0.1); // Lerp for smooth rotation
+                playerTurretTop.rotation.y = THREE.MathUtils.lerp(playerTurretTop.rotation.y, targetAngle, 0.1);
             } else {
-                // If no enemies, reset turret to face forward (0 rotation)
+                // If no enemies, reset turret to face forward (0 rotation relative to player base)
                 playerTurretTop.rotation.y = THREE.MathUtils.lerp(playerTurretTop.rotation.y, 0, 0.1);
             }
 
@@ -1538,15 +1683,23 @@
                 // Check collision with obstacles
                 let hitObstacle = false;
                 for (let j = obstacles.length - 1; j >= 0; j--) {
-                    const obstacleBox = new THREE.Box3().setFromObject(obstacles[j].mesh);
+                    // Skip if the obstacle is not visible or already destroyed
+                    // Also check if obstacle has health Infinity (unbreakable)
+                    if (!obstacles[j].mesh.visible || obstacles[j].health <= 0) continue;
+
+                    const obstacleBox = getBoundingBox(obstacles[j].mesh);
                     const bulletSphere = new THREE.Sphere(bullet.position, bullet.geometry.parameters.radius);
                     if (obstacleBox.intersectsSphere(bulletSphere)) {
-                        obstacles[j].health -= bullet.userData.damage; // Bullets damage obstacles
-                        spawnDamageNumber(bullet.userData.damage, obstacles[j].mesh.position);
+                        // Only damage if health is not Infinity (i.e., it's a breakable obstacle)
+                        if (obstacles[j].health !== Infinity) { 
+                            obstacles[j].health -= bullet.userData.damage; // Bullets damage obstacles
+                            spawnDamageNumber(bullet.userData.damage, obstacles[j].mesh.position);
+                        } else {
+                            console.log("Bullet hit unbreakable obstacle.");
+                        }
                         disposeBulletMesh(bullet); // Return bullet to pool
                         playerBullets.splice(i, 1);
                         hitObstacle = true;
-                        console.log(`Player bullet hit obstacle. Obstacle health: ${obstacles[j].health}`);
                         break;
                     }
                 }
@@ -1587,15 +1740,23 @@
                 // Check collision with obstacles
                 let hitObstacle = false;
                 for (let j = obstacles.length - 1; j >= 0; j--) {
-                    const obstacleBox = new THREE.Box3().setFromObject(obstacles[j].mesh);
+                    // Skip if the obstacle is not visible or already destroyed
+                    // Also check if obstacle has health Infinity (unbreakable)
+                    if (!obstacles[j].mesh.visible || obstacles[j].health <= 0) continue;
+
+                    const obstacleBox = getBoundingBox(obstacles[j].mesh);
                     const bulletSphere = new THREE.Sphere(bullet.position, bullet.geometry.parameters.radius);
                     if (obstacleBox.intersectsSphere(bulletSphere)) {
-                        obstacles[j].health -= bullet.userData.damage; // Bullets damage obstacles
-                        spawnDamageNumber(bullet.userData.damage, obstacles[j].mesh.position);
+                         // Only damage if health is not Infinity (i.e., it's a breakable obstacle)
+                         if (obstacles[j].health !== Infinity) { 
+                            obstacles[j].health -= bullet.userData.damage; // Bullets damage obstacles
+                            spawnDamageNumber(bullet.userData.damage, obstacles[j].mesh.position);
+                        } else {
+                            console.log("Bullet hit unbreakable obstacle.");
+                        }
                         disposeBulletMesh(bullet); // Return bullet to pool
                         enemyBullets.splice(i, 1);
                         hitObstacle = true;
-                        console.log(`Enemy bullet hit obstacle. Obstacle health: ${obstacles[j].health}`);
                         break;
                     }
                 }
@@ -1612,10 +1773,65 @@
         function updateEnemies(delta) {
             for (let i = enemies.length - 1; i >= 0; i--) {
                 const enemy = enemies[i];
+                const enemyMesh = enemy.mesh;
+
                 // Enemy movement towards player
                 if (playerMesh) {
-                    const direction = new THREE.Vector3().subVectors(playerMesh.position, enemy.mesh.position).normalize();
-                    enemy.mesh.position.addScaledVector(direction, 5 * delta);
+                    const direction = new THREE.Vector3().subVectors(playerMesh.position, enemyMesh.position).normalize();
+                    const moveAmount = 5 * delta; // Enemy speed
+                    const enemyMovementVector = direction.clone().multiplyScalar(moveAmount);
+
+                    const enemyCurrentPos = enemyMesh.position.clone();
+                    const enemyNextPosX = enemyCurrentPos.x + enemyMovementVector.x;
+                    const enemyNextPosZ = enemyCurrentPos.z + enemyMovementVector.z;
+
+                    const enemyBox = getBoundingBox(enemyMesh);
+
+                    // X-axis collision check for enemy
+                    let collisionX = false;
+                    if (enemyMovementVector.x !== 0) {
+                        const potentialEnemyBoxX = enemyBox.clone();
+                        potentialEnemyBoxX.translate(new THREE.Vector3(enemyMovementVector.x, 0, 0));
+
+                        for (const obstacle of obstacles) {
+                            // Skip if the obstacle is not visible or already destroyed
+                            if (!obstacle.mesh.visible || obstacle.health <= 0) continue;
+
+                            const obstacleBox = getBoundingBox(obstacle.mesh);
+                            if (potentialEnemyBoxX.intersectsBox(obstacleBox)) {
+                                collisionX = true;
+                                break;
+                            }
+                        }
+                    }
+                    if (!collisionX) {
+                        enemyMesh.position.x = enemyNextPosX;
+                    }
+
+                    // Z-axis collision check for enemy
+                    let collisionZ = false;
+                    if (enemyMovementVector.z !== 0) {
+                        const potentialEnemyBoxZ = enemyBox.clone();
+                        potentialEnemyBoxZ.translate(new THREE.Vector3(0, 0, enemyMovementVector.z));
+
+                        for (const obstacle of obstacles) {
+                            // Skip if the obstacle is not visible or already destroyed
+                            if (!obstacle.mesh.visible || obstacle.health <= 0) continue;
+
+                            const obstacleBox = getBoundingBox(obstacle.mesh);
+                            if (potentialEnemyBoxZ.intersectsBox(obstacleBox)) {
+                                collisionZ = true;
+                                break;
+                            }
+                        }
+                    }
+                    if (!collisionZ) {
+                        enemyMesh.position.z = enemyNextPosZ;
+                    }
+
+                    // Clamp enemy position to world boundaries
+                    enemyMesh.position.x = Math.max(WORLD_MIN, Math.min(WORLD_BOUNDARY, enemyMesh.position.x));
+                    enemyMesh.position.z = Math.max(WORLD_MIN, Math.min(WORLD_BOUNDARY, enemyMesh.position.z));
                 }
 
                 // Enemy rotation (added for visual flair)
@@ -1628,7 +1844,7 @@
                 }
 
                 if (enemy.health <= 0) {
-                    spawnExplosion(enemy.mesh.position);
+                    spawnExplosion(enemy.mesh.position, Tone.now()); // Pass Tone.now()
                     let scoreEarned = enemy.mesh.userData.isBoss ? 500 : 100;
                     if (scoreMultiplierActive) {
                         scoreEarned *= 2;
@@ -1644,28 +1860,36 @@
 
                     enemiesRemainingInWave--;
                     if (enemiesRemainingInWave <= 0) {
+                        // Game no longer ends; just start the next wave
                         startNextWave();
                     } else {
                         // Spawn a new enemy if there are still enemies for this wave
-                        if (enemies.length < enemiesInCurrentWave) { // Prevent over-spawning
-                            spawnRandomEnemy(WAVE_CONFIG[currentWave - 1].bossChance);
+                        // This condition ensures the total number of enemies on screen at any time
+                        // doesn't exceed `enemiesInCurrentWave` for this wave setup.
+                        if (enemies.length < WAVE_CONFIG[Math.min(currentWave - 1, WAVE_CONFIG.length - 1)].numEnemies) { 
+                            spawnRandomEnemy(WAVE_CONFIG[Math.min(currentWave - 1, WAVE_CONFIG.length - 1)].bossChance);
                         }
                     }
                 }
             }
 
             // Dynamic enemy spawning (for ongoing waves)
+            // This logic is for continuously spawning enemies if the number on screen is low,
+            // independent of `enemiesRemainingInWave` for the initial wave spawn count.
+            // It ensures the arena stays populated.
             enemySpawnTimer += delta;
-            if (enemySpawnTimer >= enemySpawnInterval && enemies.length < enemiesInCurrentWave) {
-                spawnRandomEnemy(WAVE_CONFIG[currentWave - 1].bossChance);
+            const currentWaveConfig = WAVE_CONFIG[Math.min(currentWave - 1, WAVE_CONFIG.length - 1)];
+            if (enemySpawnTimer >= enemySpawnInterval && enemies.length < currentWaveConfig.numEnemies) {
+                spawnRandomEnemy(currentWaveConfig.bossChance);
                 enemySpawnTimer = 0;
             }
         }
 
         function updateObstacles() {
             for (let i = obstacles.length - 1; i >= 0; i--) {
-                if (obstacles[i].health <= 0) {
-                    spawnExplosion(obstacles[i].mesh.position);
+                // Only process if health is not Infinity (i.e., not an unbreakable boundary wall or cuboid obstacle)
+                if (obstacles[i].health <= 0 && obstacles[i].health !== Infinity) {
+                    spawnExplosion(obstacles[i].mesh.position, Tone.now()); // Pass Tone.now()
                     scene.remove(obstacles[i].mesh); // Ensure mesh is removed
                     obstacles.splice(i, 1);
                     console.log("Obstacle destroyed!");
@@ -1710,8 +1934,11 @@
                         case 'nukePack': // New: Nuke Pack
                             console.log("Nuke Pack Collected! Detonating all enemies.");
                             showDramaMessage("NUKE! All Enemies Eliminated!", 2000 / 2); // Kept longer for impact
+                            let explosionTimeOffset = 0; // Initialize offset for sequential explosions
                             enemies.forEach(enemy => {
-                                spawnExplosion(enemy.mesh.position);
+                                // Schedule explosions with a small, increasing offset
+                                spawnExplosion(enemy.mesh.position, Tone.now() + explosionTimeOffset);
+                                explosionTimeOffset += 0.01; // Small increment for each explosion
                                 let scoreEarned = enemy.mesh.userData.isBoss ? 500 : 100;
                                 if (scoreMultiplierActive) {
                                     scoreEarned *= 2;
@@ -1720,13 +1947,11 @@
                                 scene.remove(enemy.mesh);
                                 enemiesRemainingInWave--; // Decrement remaining enemies for wave progression
                             });
-                            enemies = []; // Clear the enemies array
+                            enemies = []; // Clear the enemies array AFTER processing them for explosions
                             updateUI();
-                            // If all enemies are cleared and it's not the final wave, start next wave
-                            if (enemiesRemainingInWave <= 0 && currentWave < WAVE_CONFIG.length) {
+                            // If all enemies are cleared, just start next wave (game is endless)
+                            if (enemiesRemainingInWave <= 0) {
                                 startNextWave();
-                            } else if (enemiesRemainingInWave <= 0 && currentWave === WAVE_CONFIG.length) {
-                                victory();
                             }
                             break;
                         case 'scoreMultiplier':
@@ -1751,7 +1976,7 @@
             }
         }
 
-        function spawnExplosion(position) {
+        function spawnExplosion(position, playTime = Tone.now()) { // Add playTime parameter with default
             const numParticles = 30; // More particles
             const particleGeometry = new THREE.SphereGeometry(0.5, 8, 8);
             const baseColor = new THREE.Color(0xffa500); // Orange base color
@@ -1777,7 +2002,7 @@
                 scene.add(particle);
             }
             if (Tone.context && Tone.context.state === 'running') { // Check Tone.context exists and is running
-                explosionSound.triggerAttackRelease("8n");
+                explosionSound.triggerAttackRelease("8n", playTime); // Use the provided playTime
             }
         }
 
