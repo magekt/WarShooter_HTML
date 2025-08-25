@@ -358,6 +358,35 @@
       box-shadow: 0 0 15px var(--primary-color);
     }
 
+    /* Weapon HUD */
+    #weaponHud {
+        position: fixed;
+        bottom: 10px;
+        right: 10px;
+        z-index: 20;
+        background: var(--ui-bg);
+        padding: 10px 15px;
+        border-radius: 8px;
+        backdrop-filter: blur(5px);
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        box-shadow: 0 4px 10px rgba(0, 0, 0, 0.4);
+        display: flex;
+        flex-direction: column;
+        align-items: flex-end;
+        gap: 5px;
+    }
+
+    #weaponName {
+        font-size: 1.2rem;
+        color: var(--primary-color);
+        font-weight: bold;
+    }
+
+    #ammoCount {
+        font-size: 1.1rem;
+        color: var(--text-color);
+    }
+
     /* Mobile Responsive */
     @media (max-width: 768px) {
       #hud { font-size: 0.8rem; padding: 8px; }
@@ -375,6 +404,13 @@
         font-size: 1.2rem;
         padding: 10px 25px;
       }
+      #weaponHud {
+        bottom: 70px; /* Adjust for joystick */
+        right: 10px;
+        padding: 8px 12px;
+      }
+      #weaponName { font-size: 1rem; }
+      #ammoCount { font-size: 0.9rem; }
     }
 
     @media (max-width: 480px) {
@@ -384,6 +420,13 @@
       #moveJoystick { left: 10px; bottom: 10px; width: 70px; height: 70px; }
       #moveJoystickInner { width: 30px; height: 30px; top: 20px; left: 20px; }
       #shootBtn { right: 10px; bottom: 60px; width: 60px; height: 60px; }
+      #weaponHud {
+        bottom: 50px; /* Adjust for smaller screens */
+        right: 5px;
+        padding: 6px 10px;
+      }
+      #weaponName { font-size: 0.9rem; }
+      #ammoCount { font-size: 0.8rem; }
     }
   </style>
 </head>
@@ -428,6 +471,12 @@
   <!-- Damage Flash -->
   <div id="damageFlash"></div>
 
+  <!-- Weapon HUD -->
+  <div id="weaponHud">
+    <span id="weaponName">Rifle</span>
+    <span id="ammoCount">Ammo: ∞</span>
+  </div>
+
   <!-- Overlays -->
   <div id="homeScreen" class="overlay">
     <div class="overlay-content">
@@ -458,11 +507,11 @@
     <div class="overlay-content">
         <h2>🎯 Game Instructions</h2>
         <p><strong>Controls:</strong></p>
-        <p>• Desktop: WASD to move, mouse to look around</p>
+        <p>• Desktop: WASD to move, mouse to look around, <strong>1/2 to switch weapons</strong></p>
         <p>• Mobile: Touch joystick to move, right half of screen to look around</p>
         <p><strong>Strategy:</strong></p>
         <p>• Blue zone heals you, avoid enemy territory (green zone)</p>
-        <p>• Collect power-ups for advantages (shield, rapid fire, damage boost, invincibility)</p>
+        <p>• Collect power-ups for advantages (shield, rapid fire, damage boost, invincibility, <strong>ammo</strong>)</p>
         <p>• Clear all enemies to advance levels and face tougher challenges!</p>
         <p>• You will automatically shoot the nearest enemy!</p>
         <button class="btn" id="instructionsStartBtn">Start Game</button>
@@ -499,17 +548,40 @@
       WORLD_MIN: -100,
       PLAYER_SPEED: 12,
       BULLET_SPEED: 35,
-      BULLET_DAMAGE: 40,
-      BOOSTED_DAMAGE: 80,
-      ENEMY_HEALTH: 120,
-      BOSS_HEALTH: 400,
       COLLISION_RADIUS: 1.8,
       POWER_UP_SPAWN_INTERVAL: 8000,
-      ENEMY_WAVE_INTERVAL: 100000, // Increased from 25000 to 100000 (4 times larger)
-      BOSS_SPAWN_INTERVAL: 240000, // Increased from 60000 to 240000 (4 minutes)
+      ENEMY_WAVE_INTERVAL: 100000,
+      BOSS_SPAWN_INTERVAL: 240000,
       POWER_UP_DURATION: 8000,
       HAZARD_DAMAGE_RATE: 8,
-      ENEMY_SPAWN_IN_WAVE_INTERVAL: 30000 // New: 30 seconds between individual enemy spawns in a wave
+      ENEMY_SPAWN_IN_WAVE_INTERVAL: 30000, // 30 seconds between individual enemy spawns in a wave
+      
+      // Weapon Configurations
+      WEAPONS: {
+        rifle: {
+          name: "Rifle",
+          damage: 40,
+          fireRate: 250, // ms
+          maxAmmo: 150,
+          bulletColor: 0x00ffff,
+          bulletSize: 0.2,
+          spread: 0 // No spread
+        },
+        shotgun: {
+          name: "Shotgun",
+          damage: 25, // Damage per pellet
+          fireRate: 1000, // ms (slower)
+          maxAmmo: 30,
+          pellets: 5, // Number of bullets fired per shot
+          bulletColor: 0xffa500,
+          bulletSize: 0.3,
+          spread: 0.2 // Angle in radians for spread
+        }
+      },
+
+      // Enemy Configurations
+      ENEMY_HEALTH: 120,
+      BOSS_HEALTH: 400,
     };
 
     // ===================== Game State =====================
@@ -637,6 +709,15 @@
         if (this.cameraPitchGroup) {
             this.cameraPitchGroup.rotation.x = 0;
         }
+
+        // --- New Weapon System Reset ---
+        this.weapons = {
+            rifle: { ...CONFIG.WEAPONS.rifle, ammo: CONFIG.WEAPONS.rifle.maxAmmo },
+            shotgun: { ...CONFIG.WEAPONS.shotgun, ammo: CONFIG.WEAPONS.shotgun.maxAmmo / 2 } // Start with half ammo for shotgun
+        };
+        this.currentWeaponType = 'rifle';
+        this.currentWeapon = this.weapons[this.currentWeaponType];
+        // --- End New Weapon System Reset ---
       }
 
       update(delta) {
@@ -746,6 +827,24 @@
         this.playerBody.material.emissive.set(0x000000);
       }
 
+      // --- New Weapon System Methods ---
+      switchWeapon(weaponType) {
+        if (this.weapons[weaponType]) {
+          this.currentWeaponType = weaponType;
+          this.currentWeapon = this.weapons[weaponType];
+          ui.updateWeaponHud();
+          ui.addKillFeed(`Switched to ${this.currentWeapon.name}`);
+        }
+      }
+
+      addAmmo(weaponType, amount) {
+          if (this.weapons[weaponType]) {
+              this.weapons[weaponType].ammo = Math.min(this.weapons[weaponType].maxAmmo, this.weapons[weaponType].ammo + amount);
+              ui.updateWeaponHud();
+          }
+      }
+      // --- End New Weapon System Methods ---
+
       get position() {
         return this.mesh.position;
       }
@@ -836,19 +935,48 @@
       updateMovement(playerPos) {
         const toPlayer = new THREE.Vector3().subVectors(playerPos, this.mesh.position);
         const distance = toPlayer.length();
+        
+        let desiredDirection = toPlayer.normalize(); // Default: move towards player
+
+        // --- New: Basic Obstacle Avoidance ---
+        // Iterate through obstacles and apply repulsion force if too close
+        const avoidanceRadius = 8; // How far to "see" obstacles
+        const repulsionStrength = 20; // How strongly to repel
+
+        for (const obstacle of obstacles) {
+            const toObstacle = new THREE.Vector3().subVectors(obstacle.position, this.mesh.position);
+            const distToObstacle = toObstacle.length();
+
+            if (distToObstacle < avoidanceRadius + obstacle.geometry.parameters.width / 2) {
+                // Calculate repulsion direction (away from obstacle)
+                const repulsionDirection = new THREE.Vector3().subVectors(this.mesh.position, obstacle.position).normalize();
+                
+                // Scale repulsion based on proximity (closer = stronger)
+                const repulsionForce = repulsionDirection.multiplyScalar(repulsionStrength / (distToObstacle + 0.1));
+                
+                // Add to desired direction
+                desiredDirection.add(repulsionForce);
+            }
+        }
+        // --- End Obstacle Avoidance ---
+
 
         if (distance < 15 && this.health < this.maxHealth * 0.3) {
           // Retreat when low health
-          this.moveDirection.copy(toPlayer).negate().normalize();
+          desiredDirection.copy(toPlayer).negate().normalize();
         } else if (distance > 30) {
           // Approach if far
-          this.moveDirection.copy(toPlayer).normalize();
+          // desiredDirection.copy(toPlayer).normalize(); // Already handled as default
         } else {
-          // Strafe around player
-          const perpendicular = new THREE.Vector3(-toPlayer.z, 0, toPlayer.x).normalize();
-          const approach = toPlayer.normalize().multiplyScalar(0.3);
-          this.moveDirection.copy(perpendicular).add(approach).normalize();
+          // Strafe around player (only if not actively approaching/retreating)
+          if (!(distance < 15 && this.health < this.maxHealth * 0.3)) { // Don't strafe if retreating
+            const perpendicular = new THREE.Vector3(-toPlayer.z, 0, toPlayer.x).normalize();
+            const approachFactor = 0.3; // How much to still approach while strafing
+            desiredDirection.copy(perpendicular).add(toPlayer.normalize().multiplyScalar(approachFactor)).normalize();
+          }
         }
+        
+        this.moveDirection.copy(desiredDirection).normalize();
       }
 
       shoot(playerPos) {
@@ -902,7 +1030,7 @@
         this.bulletPool = [];
       }
 
-      createBullet(position, direction, isPlayer, damage = CONFIG.BULLET_DAMAGE) {
+      createBullet(position, direction, isPlayer, damage, bulletColor, bulletSize) {
         const bullet = this.getBulletFromPool();
         bullet.position.copy(position);
         bullet.userData = {
@@ -910,12 +1038,12 @@
           speed: CONFIG.BULLET_SPEED,
           damage: damage,
           isPlayer: isPlayer,
-          lifetime: 3.0
+          lifetime: 3.0 // Bullets despawn after 3 seconds
         };
 
-        // Visual differences
-        bullet.material.color.set(isPlayer ? 0x00ffff : 0xffff00);
-        bullet.scale.setScalar(isPlayer ? 1.2 : 1.0);
+        // Visual differences based on source and weapon
+        bullet.material.color.set(bulletColor || (isPlayer ? 0x00ffff : 0xffff00));
+        bullet.scale.setScalar(bulletSize || (isPlayer ? 1.2 : 1.0));
 
         this.bullets.push(bullet);
         scene.add(bullet);
@@ -1142,7 +1270,11 @@
          { type: 'shield', color: 0x00ffff, icon: '🛡️' },
          { type: 'damage', color: 0xff00ff, icon: '💥' },
          { type: 'rapid', color: 0xffaa00, icon: '⚡' },
-         { type: 'invincible', color: 0xffff00, icon: '⭐' }
+         { type: 'invincible', color: 0xffff00, icon: '⭐' },
+         // --- New Ammo Power-ups ---
+         { type: 'ammoRifle', color: 0x00aaff, icon: '🔫' },
+         { type: 'ammoShotgun', color: 0xff8800, icon: '💣' }
+         // --- End New Ammo Power-ups ---
        ];
 
        const powerUpType = types[Math.floor(Math.random() * types.length)];
@@ -1203,6 +1335,16 @@
            player.activatePowerUp(type);
            ui.addKillFeed(`${powerUp.userData.icon} ${type.toUpperCase()} activated!`);
            break;
+        // --- New Ammo Power-ups Handling ---
+         case 'ammoRifle':
+            player.addAmmo('rifle', 50);
+            ui.addKillFeed('🔫 Rifle Ammo +50!');
+            break;
+         case 'ammoShotgun':
+            player.addAmmo('shotgun', 10);
+            ui.addKillFeed('💣 Shotgun Ammo +10!');
+            break;
+        // --- End New Ammo Power-ups Handling ---
        }
      }
 
@@ -1219,7 +1361,7 @@
        this.sounds = {};
        this.createSound('shoot', 'data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdJivrJBhNjVgodDbq2EcBj+a2/LDciUFLIHO8tiJNwgZaLvt559NEAxQp+PwtmMcBjiR1/LMeSwFJHfH8N2QQAoUXrTp66hVFApGn+X0wl0bCjyR2/LNeSMGIHfH8N2QQAoUXrTp66hVFApGn+X0wl0bCjyR2/LNeSMGIHfH8N2QQAoUXrTp66hVFApGn+X0wl0bCjyR2/LNeSMGIHfH8N2QQAoUXrTp66hVFApGn+X0wl0bCjyR2/LNeSMGIHfH8N2QQAoUXrTp66hVFApGn+X0wl0bCjyR2/LNeSMGIHfH8N2QQAoUXrTp66hVFApGn+X0wl0bCjyR2/LNeSMGIHfH8N2QQAoUXrTp66hVFApGn+X0wl0bCg==');
        this.createSound('explosion', 'data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdJivrJBhNjVgodDbq2EcBj+a2/LDciUFLIHO8tiJNwgZaLvt559NEAxQp+PwtmMcBjiR1/LMeSwFJHfH8N2QQAoUXrTp66hVFApGn+X0wl0bCjyR2/LNeSMGIHfH8N2QQAoUXrTp66hVFApGn+X0wl0bCjyR2/LNeSMGIHfH8N2QQAoUXrTp66hVFApGn+X0wl0bCjyR2/LNeSMGIHfH8N2QQAoUXrTp66hVFApGn+X0wl0bCjyR2/LNeSMGIHfH8N2QQAoUXrTp66hVFApGn+X0wl0bCjyR2/LNeSMGIHfH8N2QQAoUXrTp66hVFApGn+X0wl0bCjyR2/LNeSMGIHfH8N2QQAoUXrTp66hVFApGn+X0wl0bCg==');
-       this.createSound('powerup', 'data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdJivrJBhNjVgodDbq2EcBj+a2/LDciUFLIHO8tiJNwgZaLvt559NEAxQp+PwtmMcBjiR1/LMeSwFJHfH8N2QQAoUXrTp66hVFApGn+X0wl0bCjyR2/LNeSMGIHfH8N2QQAoUXrTp66hVFApGn+X0wl0bCjyR2/LNeSMGIHfH8N2QQAoUXrTp66hVFApGn+X0wl0bCjyR2/LNeSMGIHfH8N2QQAoUXrTp66hVFApGn+X0wl0bCjyR2/LNeSMGIHfH8N2QQAoUXrTp66hVFApGn+X0wl0bCjyR2/LNeSMGIHfH8N2QQAoUXrTp66hVFApGn+X0wl0bCg==');
+       this.createSound('powerup', 'data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdJivrJBhNjVgodDbq2EcBj+a2/LDciUFLIHO8tiJNwgZaLvt559NEAxQp+PwtmMcBjiR1/LMeSwFJHfH8N2QQAoUXrTp66hVFApGn+X0wl0bCjyR2/LNeSMGIHfH8N2QQAoUXrTp66hVFApGn+X0wl0bCjyR2/LNeSMGIHfH8N2QQAoUXrTp66hVFApGn+X0wl0bCjyR2/LNeSMGIHfH8N2QQAoUXrTp66hVFApGn+X0wl0bCjyR2/LNeSMGIHfH8N2QQAoUXrTp66hVFApGn+X0wl0bCjyR2/LNeSMGIHfH8N2QQAoUXrTp66hVFApGn+X0wl0bCjyR2/LNeSMGIHfH8N2QQAoUXrTp66hVFApGn+X0wl0bCg==');
        this.createSound('gameover', 'data:audio/wav;base66,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdJivrJBhNjVgodDbq2EcBj+a2/LDciUFLIHO8tiJNwgZaLvt559NEAxQp+PwtmMcBjiR1/LMeSwFJHfH8N2QQAoUXrTp66hVFApGn+X0wl0bCjyR2/LNeSMGIHfH8N2QQAoUXrTp66hVFApGn+X0wl0bCjyR2/LNeSMGIHfH8N2QQAoUXrTp66hVFApGn+X0wl0bCjyR2/LNeSMGIHfH8N2QQAoUXrTp66hVFApGn+X0wl0bCjyR2/LNeSMGIHfH8N2QQAoUXrTp66hVFApGn+X0wl0bCjyR2/LNeSMGIHfH8N2QQAoUXrTp66hVFApGn+X0wl0bCg==');
      }
 
@@ -1279,6 +1421,13 @@
          if (e.key === 'escape') { 
             game.ui.togglePause(); 
          }
+         // --- New Weapon Switching Keybinds ---
+         if (e.key === '1') {
+            player.switchWeapon('rifle');
+         } else if (e.key === '2') {
+            player.switchWeapon('shotgun');
+         }
+         // --- End New Weapon Switching Keybinds ---
        });
 
        window.addEventListener('keyup', (e) => {
@@ -1330,10 +1479,19 @@
        if (gameState.gameOver || gameState.paused) return;
        
        const now = performance.now();
-       const fireRate = player.powerUps.rapid.active ? 100 : 250;
+       const currentWeapon = player.currentWeapon;
+       const fireRate = player.powerUps.rapid.active ? currentWeapon.fireRate / 2 : currentWeapon.fireRate;
        
        if (now - player.lastShotTime < fireRate) return;
        
+       // --- New: Ammo Check ---
+       if (currentWeapon.ammo <= 0) {
+           ui.addKillFeed(`Out of ${currentWeapon.name} ammo!`);
+           return;
+       }
+       currentWeapon.ammo--; // Consume ammo
+       // --- End New: Ammo Check ---
+
        player.lastShotTime = now;
        Utils.playSound(audioManager.shoot);
 
@@ -1344,18 +1502,28 @@
        // Use targetDirection if provided, otherwise use camera's current direction
        const direction = targetDirection ? targetDirection.clone() : camera.getWorldDirection(new THREE.Vector3());
 
-       // Define damage here
-       const damage = player.powerUps.damage.active ? CONFIG.BOOSTED_DAMAGE : CONFIG.BULLET_DAMAGE;
+       // Define damage here, boosted by power-up
+       const effectiveDamage = player.powerUps.damage.active ? currentWeapon.damage * 1.5 : currentWeapon.damage;
 
-       // Spread shot when damage boost is active
-       if (player.powerUps.damage.active) {
-         for (let i = -1; i <= 1; i++) { // Slightly less spread for better control
-           const spreadDirection = direction.clone().applyAxisAngle(new THREE.Vector3(0, 1, 0), i * 0.1); // Adjust spread angle
-           bulletManager.createBullet(startPos, spreadDirection, true, damage); 
+       // --- New: Weapon-specific shooting ---
+       if (currentWeapon.type === 'shotgun') {
+         for (let i = 0; i < currentWeapon.pellets; i++) {
+           const spreadAngle = (Math.random() - 0.5) * currentWeapon.spread; // Random spread
+           const spreadDirection = direction.clone().applyAxisAngle(new THREE.Vector3(0, 1, 0), spreadAngle); // Horizontal spread
+
+           // Also add some vertical spread
+           const verticalSpreadAngle = (Math.random() - 0.5) * currentWeapon.spread / 2;
+           const axisForVerticalSpread = new THREE.Vector3().crossVectors(spreadDirection, new THREE.Vector3(0, 1, 0)).normalize();
+           spreadDirection.applyAxisAngle(axisForVerticalSpread, verticalSpreadAngle);
+
+           bulletManager.createBullet(startPos, spreadDirection, true, effectiveDamage, currentWeapon.bulletColor, currentWeapon.bulletSize);
          }
-       } else {
-         bulletManager.createBullet(startPos, direction, true, damage); 
+       } else { // Default for rifle and any other future single-shot weapons
+         bulletManager.createBullet(startPos, direction, true, effectiveDamage, currentWeapon.bulletColor, currentWeapon.bulletSize); 
        }
+       // --- End New: Weapon-specific shooting ---
+       
+       ui.updateWeaponHud(); // Update ammo display
      }
 
      getMovementVector() {
@@ -1480,7 +1648,9 @@
          loadingFill: document.getElementById('loadingFill'), // New
          loadingText: document.getElementById('loadingText'), // New
          playBtn: document.getElementById('playBtn'), // New
-         howToPlayBtn: document.getElementById('howToPlayBtn') // New
+         howToPlayBtn: document.getElementById('howToPlayBtn'), // New
+         weaponName: document.getElementById('weaponName'), // New
+         ammoCount: document.getElementById('ammoCount') // New
        };
        
        this.killFeedMessages = [];
@@ -1541,6 +1711,7 @@
        if (!inputManager.detectMobile()) { // Check if it's NOT mobile
          document.body.requestPointerLock();
        }
+       this.updateWeaponHud(); // Initial update for weapon HUD
      }
 
      togglePause() {
@@ -1599,6 +1770,7 @@
        this.updateKillFeed();
        this.updateMinimap();
        this.updateDamageFlash();
+       this.updateWeaponHud(); // Update weapon HUD every frame
      }
 
      updatePowerUpIcons() {
@@ -1716,6 +1888,15 @@
          ctx.arc(enemyPos.x, enemyPos.y, enemy.type === 'boss' ? 6 : 3, 0, Math.PI * 2);
          ctx.fill();
        });
+
+       // --- New: Draw Obstacles on Minimap ---
+       obstacles.forEach(obstacle => {
+            const obstaclePos = worldToMap(obstacle.position);
+            const size = obstacle.geometry.parameters.width / (CONFIG.WORLD_BOUNDARY - CONFIG.WORLD_MIN) * size;
+            ctx.fillStyle = 'rgba(100, 100, 100, 0.8)'; // Gray for obstacles
+            ctx.fillRect(obstaclePos.x - size/2, obstaclePos.y - size/2, size, size);
+       });
+       // --- End New: Draw Obstacles on Minimap ---
      }
 
      flashDamage() {
@@ -1779,6 +1960,15 @@
         this.elements.howToPlayBtn.disabled = false;
         this.elements.playBtn.textContent = 'Play Game'; // Ensure text is correct
     }
+
+    // --- New Weapon HUD Update ---
+    updateWeaponHud() {
+        if (player && player.currentWeapon) {
+            this.elements.weaponName.textContent = player.currentWeapon.name;
+            this.elements.ammoCount.textContent = `Ammo: ${player.currentWeapon.ammo}/${player.currentWeapon.maxAmmo}`;
+        }
+    }
+    // --- End New Weapon HUD Update ---
    }
 
    // ===================== Main Game Class =====================
@@ -2217,6 +2407,11 @@
        
        // Player benefits
        player.health = Math.min(player.maxHealth, player.health + 20);
+
+       // --- New: Replenish ammo on level up ---
+       player.addAmmo('rifle', 50); // Give some rifle ammo
+       player.addAmmo('shotgun', 10); // Give some shotgun ammo
+       // --- End New: Replenish ammo on level up ---
        
        ui.addKillFeed(`🎯 Level ${gameState.level} - Wave Clear Bonus!`);
        effectsManager.addScreenShake(0.4, 0.5);
@@ -2282,6 +2477,7 @@
                    gameState.loadingProgress++; ui.updateLoadingProgress(gameState.loadingProgress, gameState.loadingSteps);
                    setTimeout(() => { // Final 1-second delay
                        ui.enablePlayButtons();
+                       ui.updateWeaponHud(); // Update weapon HUD on restart
                    }, 1000);
                }, 100); // Small delay for each step
            }, 100);
