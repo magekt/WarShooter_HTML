@@ -11,17 +11,21 @@
             background: #1a1a1a; /* Darker background for drama */
             font-family: 'Inter', sans-serif; /* Using Inter font */
             color: #fff;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: flex-start; /* Align to top for UI elements */
-            height: 100vh;
-            position: relative; /* For absolute positioning of controls */
+            display: block; /* Changed to block */
+            align-items: center; /* No longer needed with block display */
+            justify-content: flex-start; /* No longer needed with block display */
+            height: 100vh; /* Ensure body takes full viewport height */
+            width: 100vw; /* Ensure body takes full viewport width */
+            position: relative; /* Needed for absolute children */
         }
         canvas {
             display: block;
-            width: 100%;
-            height: calc(100vh - 60px); /* Adjust height for UI */
+            width: 100vw; /* Make canvas fill viewport width */
+            height: 100vh; /* Make canvas fill viewport height */
+            position: absolute; /* Position absolutely to cover the whole viewport */
+            top: 0;
+            left: 0;
+            z-index: 1; /* Place below UI */
         }
         #gameUI {
             position: absolute;
@@ -36,7 +40,7 @@
             padding: 10px 20px;
             box-sizing: border-box;
             font-size: 1.2rem;
-            z-index: 50;
+            z-index: 50; /* Place above canvas */
             border-bottom-left-radius: 10px;
             border-bottom-right-radius: 10px;
         }
@@ -134,7 +138,7 @@
             align-items: flex-end;
             padding: 0 10px;
             box-sizing: border-box;
-            z-index: 60;
+            z-index: 60; /* Place above canvas */
         }
 
         #dPad {
@@ -209,10 +213,36 @@
         #specialAttackButton {
             background: #dc3545; /* Red for special attack */
             border-color: #b02a37;
+            position: relative; /* For cooldown overlay */
         }
         #specialAttackButton:active {
             background: #b02a37;
         }
+
+        /* Special Attack Cooldown Overlay */
+        #specialAttackCooldownOverlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.7); /* Dark overlay */
+            border-radius: 50%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 1.5rem;
+            color: white;
+            font-weight: bold;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+            pointer-events: none; /* Allows clicks to pass through */
+            z-index: 1; /* Above button content */
+        }
+        #specialAttackCooldownOverlay.visible {
+            opacity: 1;
+        }
+
 
         /* Pause Button Styling */
         #pauseButton {
@@ -364,6 +394,26 @@
                 display: flex; /* Show game elements in landscape */
             }
         }
+
+        /* Mini-map styling */
+        #miniMapContainer {
+            position: absolute;
+            bottom: 10px;
+            left: 10px;
+            width: 150px; /* Smaller mini-map */
+            height: 150px;
+            background: rgba(0, 0, 0, 0.6);
+            border: 2px solid #00ffff; /* Cyan border for mini-map */
+            border-radius: 10px;
+            overflow: hidden;
+            z-index: 55; /* Above canvas, below mobile controls */
+            display: none; /* Hidden by default */
+        }
+        #miniMapCanvas {
+            width: 100%;
+            height: 100%;
+            display: block;
+        }
     </style>
 </head>
 <body>
@@ -398,6 +448,11 @@
     <div id="dramaOverlay"></div>
     <div id="damageFlash"></div>
 
+    <!-- Mini-map Container -->
+    <div id="miniMapContainer">
+        <canvas id="miniMapCanvas"></canvas>
+    </div>
+
     <!-- Mobile Controls -->
     <div id="mobileControls" style="display: none;">
         <div id="dPad">
@@ -408,7 +463,10 @@
         </div>
         <div id="actionButtons">
             <div class="actionButton" id="shootButton" data-key="Space">Shoot</div>
-            <div class="actionButton" id="specialAttackButton" data-key="KeyQ">Special</div>
+            <div class="actionButton" id="specialAttackButton" data-key="KeyQ">
+                Special
+                <div id="specialAttackCooldownOverlay"></div>
+            </div>
         </div>
     </div>
 
@@ -420,6 +478,7 @@
         // --- Global Constants ---
         const WORLD_BOUNDARY = 100;
         const WORLD_MIN = -100;
+        const WORLD_SIZE = WORLD_BOUNDARY - WORLD_MIN; // Total width/depth of the game world (200)
         const PLAYER_BASE_SPEED = 15;
         const BULLET_SPEED = 100;
         const PLAYER_BASE_BULLET_DAMAGE = 30;
@@ -442,12 +501,16 @@
         const MULTI_TARGET_COUNT = 3; // Number of enemies to target in blue zone
         const POWERUP_PICKUP_RADIUS = 5; // Increased radius for picking up power-ups
         const DAMAGE_SPEED_BOOST_DURATION = 7; // Duration for damage and speed boosts
+        const ENEMY_AVOIDANCE_RADIUS = 10; // Radius for enemy to start avoiding obstacles
+        const ENEMY_AVOIDANCE_FORCE = 0.5; // Strength of avoidance force
 
         // --- Three.js Scene Setup ---
         let scene, camera, renderer, clock;
         let dramaOverlay, damageFlash, healthFill, scoreDisplay, pauseButton, volumeSlider;
         let homeScreen, startButton, portraitMessage;
         let loadingScreen, loadingBarFill; // New loading bar elements
+        let specialAttackCooldownOverlay; // New element for special attack cooldown
+        let miniMapContainer, miniMapCanvas, miniMapCtx; // Mini-map elements
         let cameraShakeIntensity = 0;
         let cameraShakeTime = 0;
         let isGameActive = false;
@@ -509,7 +572,7 @@
         ];
 
         // --- Audio Elements (using Tone.js) ---
-        let shootSound, explosionSound, powerupSound, specialAttackSound, bgMusicSynth;
+        let shootSound, explosionSound, powerupSound, specialAttackSound, bgMusicSynth, bgMusicLoop;
 
         // --- Object Pools ---
         const bulletPool = []; // Pool for player and enemy bullets
@@ -527,6 +590,7 @@
             homeScreen = document.getElementById('homeScreen');
             portraitMessage = document.getElementById('portraitMessage');
             startButton = document.getElementById('startButton'); 
+            specialAttackCooldownOverlay = document.getElementById('specialAttackCooldownOverlay'); // Get overlay element
 
             // Simulate asset loading progress
             let progress = 0;
@@ -560,19 +624,26 @@
             pauseButton = document.getElementById('pauseButton'); 
             volumeSlider = document.getElementById('volumeSlider'); 
             
+            // Mini-map setup
+            miniMapContainer = document.getElementById('miniMapContainer');
+            miniMapCanvas = document.getElementById('miniMapCanvas');
+            miniMapCtx = miniMapCanvas.getContext('2d');
+            miniMapCanvas.width = miniMapContainer.offsetWidth;
+            miniMapCanvas.height = miniMapContainer.offsetHeight;
+
+
             // Scene
             scene = new THREE.Scene();
-            scene.fog = new THREE.FogExp2(0x333333, 0.003);
+            scene.fog = new THREE.FogExp2(0x333333, 0.002); // Reduced fog density
 
             // Camera
             camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-            camera.position.set(0, 30, 50);
+            camera.position.set(0, 50, 80); // Adjusted camera position
             camera.lookAt(0, 0, 0);
 
             // Renderer
             renderer = new THREE.WebGLRenderer({ antialias: true });
-            renderer.setSize(window.innerWidth, window.innerHeight - 60);
-            renderer.domElement.style.marginTop = '60px';
+            renderer.setSize(window.innerWidth, window.innerHeight); // Adjusted to full window size
             document.body.appendChild(renderer.domElement);
             renderer.domElement.style.display = 'none'; // Hide canvas initially
 
@@ -580,7 +651,7 @@
             clock = new THREE.Clock();
 
             // Lighting
-            scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+            scene.add(new THREE.AmbientLight(0xffffff, 0.4)); // Reduced AmbientLight intensity
             const dirLight = new THREE.DirectionalLight(0xffffff, 0.7);
             dirLight.position.set(50, 100, 50);
             scene.add(dirLight);
@@ -647,6 +718,10 @@
             playerMesh.add(playerTurretBase); // Turret base is added directly to playerMesh
             playerMesh.position.set(0, 0, 0); // Group position
             scene.add(playerMesh);
+
+            // Store references to player's main body and turret materials for easy manipulation
+            playerMesh.userData.bodyMaterial = playerBodyMaterial;
+            playerMesh.userData.turretMaterial = playerTurretTopMaterial; // Use turret top for glow
 
             // Shield visual for player (attach to the group) - Changed to MeshPhongMaterial
             const shieldGeometry = new THREE.SphereGeometry(3, 16, 16); // Slightly larger for the group
@@ -720,6 +795,7 @@
             homeScreen.style.display = 'none';
             document.getElementById('gameUI').style.display = 'flex';
             document.getElementById('mobileControls').style.display = 'flex';
+            miniMapContainer.style.display = 'block'; // Show mini-map
             renderer.domElement.style.display = 'block'; // Show canvas
 
             // Immediately reset the game visuals and state to appear on screen
@@ -794,7 +870,7 @@
                             }
                         }).toDestination();
 
-                        const bgMusicLoop = new Tone.Loop(time => {
+                        bgMusicLoop = new Tone.Loop(time => { // Assigned to bgMusicLoop
                             bgMusicSynth.triggerAttackRelease("C4", "8n", time);
                             bgMusicSynth.triggerAttackRelease("E4", "8n", time + Tone.Time("8n").toSeconds());
                             bgMusicSynth.triggerAttackRelease("G4", "8n", time + Tone.Time("4n").toSeconds());
@@ -820,6 +896,7 @@
                 }
             }
             onWindowResize();
+            isGameActive = true; // Ensure game is active after starting
         }
 
         function togglePause() {
@@ -855,7 +932,10 @@
             console.log("Game reset. Starting new round.");
             
             // Clear all active game elements from scene and arrays
-            enemies.forEach(e => scene.remove(e.mesh));
+            enemies.forEach(e => {
+                scene.remove(e.mesh);
+                if (e.healthBarSprite) scene.remove(e.healthBarSprite); // Remove health bar
+            });
             obstacles.forEach(o => scene.remove(o.mesh));
             powerUps.forEach(p => scene.remove(p));
             explosionParticles.forEach(p => scene.remove(p));
@@ -876,6 +956,7 @@
             // Remove dynamic zones from previous game if they exist
             if (greenZoneMesh) { scene.remove(greenZoneMesh.mesh); greenZoneMesh = null; }
             if (blueZoneMesh) { scene.remove(blueZoneMesh.mesh); blueZoneMesh = null; }
+            if (hazardZoneMesh) { scene.remove(hazardZoneMesh); hazardZoneMesh = null; } // Also remove fixed hazard zone
 
             playerHealth = 100;
             playerScore = 0;
@@ -900,6 +981,14 @@
             updateUI();
             playerMesh.position.set(0, 0, 0); // Reset player position for the new model
 
+            // Reset player glow
+            playerMesh.userData.bodyMaterial.emissive.setHex(0x000000); // No glow
+            playerMesh.userData.turretMaterial.emissive.setHex(0x000000); // No glow
+
+            // Clear old obstacles and redraw boundaries for fresh game
+            obstacles = []; // Clear array of obstacles
+            drawBoundaries(); // Redraw boundaries including fixed hazard zone
+            
             // Spawn initial obstacles (which can now be used for cover)
             spawnObstacle(new THREE.Vector3(-30, 2, 0), 5, 4, 5);
             spawnObstacle(new THREE.Vector3(30, 2, 0), 6, 3, 6);
@@ -939,18 +1028,25 @@
             console.log(`Starting Wave ${currentWave}`);
             
             let waveIndex = currentWave - 1;
-            // If we exceed predefined waves, loop back to the last wave config
+            let currentWaveConfig;
+
             if (waveIndex >= WAVE_CONFIG.length) {
-                waveIndex = WAVE_CONFIG.length - 1; // Use the last wave config indefinitely
-                console.log(`Continuing with scaled Wave ${currentWave} (using config from wave ${WAVE_CONFIG.length})`);
+                // Scale difficulty for waves beyond predefined configs
+                const baseWaveConfig = WAVE_CONFIG[WAVE_CONFIG.length - 1]; // Use last config as base
+                currentWaveConfig = {
+                    numEnemies: baseWaveConfig.numEnemies + (currentWave - WAVE_CONFIG.length) * 2, // Add 2 enemies per wave
+                    bossChance: Math.min(0.8, baseWaveConfig.bossChance + (currentWave - WAVE_CONFIG.length) * 0.05), // Increase boss chance
+                    powerUpChance: baseWaveConfig.powerUpChance // Keep power-up chance
+                };
+                console.log(`Continuing with scaled Wave ${currentWave} (using dynamic scaling)`);
                 showDramaMessage(`Wave ${currentWave} Incoming! Difficulty Scaled!`, 2000 / 2);
             } else {
+                currentWaveConfig = WAVE_CONFIG[waveIndex];
                 showDramaMessage(`Wave ${currentWave} Incoming!`, 2000 / 2);
             }
 
-            const wave = WAVE_CONFIG[waveIndex];
-            enemiesInCurrentWave = wave.numEnemies;
-            enemiesRemainingInWave = wave.numEnemies;
+            enemiesInCurrentWave = currentWaveConfig.numEnemies;
+            enemiesRemainingInWave = currentWaveConfig.numEnemies;
             enemySpawnTimer = 0; // Reset timer for wave-based spawning
 
             // Full health recovery at the start of each wave
@@ -966,11 +1062,11 @@
 
             // Spawn initial enemies for the wave
             for (let i = 0; i < Math.min(3, enemiesInCurrentWave); i++) { // Spawn a few at the start
-                spawnRandomEnemy(wave.bossChance);
+                spawnRandomEnemy(currentWaveConfig.bossChance);
             }
 
             // Spawn power-ups for the new wave (excluding healthPack as it's handled separately)
-            if (Math.random() < wave.powerUpChance) {
+            if (Math.random() < currentWaveConfig.powerUpChance) {
                 const powerUpTypes = ['health', 'shield', 'damageBoost', 'speedBoost', 'scoreMultiplier', 'nukePack'];
                 const randomType = powerUpTypes[Math.floor(Math.random() * powerUpTypes.length)];
                 spawnRandomPowerUp(randomType);
@@ -980,10 +1076,16 @@
         function gameOver() {
             console.log(`Game Over! Final Score: ${playerScore}`);
             isGameActive = false;
+            // Trigger player explosion
+            if (playerMesh) {
+                spawnExplosion(playerMesh.position, Tone.now());
+                scene.remove(playerMesh); // Hide player mesh after explosion
+            }
             showDramaMessage("GAME OVER! Score: " + playerScore, 5000 / 2); // Kept longer for impact
             // Hide game elements and show home screen after game over
             document.getElementById('gameUI').style.display = 'none';
             document.getElementById('mobileControls').style.display = 'none';
+            miniMapContainer.style.display = 'none'; // Hide mini-map
             renderer.domElement.style.display = 'none';
             if (Tone.Transport.state === 'started') {
                 Tone.Transport.stop(); // Stop audio on game over
@@ -1009,10 +1111,15 @@
 
         // --- Helper Functions ---
         function onWindowResize() {
-            // Adjust camera aspect ratio and renderer size based on current window dimensions
-            camera.aspect = window.innerWidth / (window.innerHeight - (isGameActive ? 60 : 0)); // Adjust for UI height if game is active
+            // Adjusted to full window size
+            camera.aspect = window.innerWidth / window.innerHeight; 
             camera.updateProjectionMatrix();
-            renderer.setSize(window.innerWidth, window.innerHeight - (isGameActive ? 60 : 0));
+            renderer.setSize(window.innerWidth, window.innerHeight); // Adjusted to full window size
+            
+            // Resize mini-map canvas
+            miniMapCanvas.width = miniMapContainer.offsetWidth;
+            miniMapCanvas.height = miniMapContainer.offsetHeight;
+
             checkOrientation(); // Re-check orientation on resize
         }
 
@@ -1040,12 +1147,12 @@
             scene.children.filter(obj => obj.userData.isBoundary).forEach(obj => scene.remove(obj));
 
             const WALL_HEIGHT = 10;
-            const WALL_THICKNESS = 2;
+            const WALL_THICKNESS = 5; // Increased wall thickness
             // Updated wall material for better visibility
             const wallMaterial = new THREE.MeshPhongMaterial({ 
-                color: 0x888888, // Brighter grey
-                emissive: 0x0000ff, // Subtle blue glow
-                emissiveIntensity: 0.3, 
+                color: 0x00FF00, // Bright green color
+                emissive: 0x00FF00, // Matching emissive color for glow
+                emissiveIntensity: 3.5, /* Increased emissive intensity */
                 shininess: 30 
             });
 
@@ -1150,28 +1257,36 @@
             }
         }
 
+        /**
+         * Spawns an obstacle.
+         * @param {THREE.Vector3} position - The position to spawn the obstacle.
+         * @param {number} width - Width of the obstacle.
+         * @param {number} height - Height of the obstacle.
+         * @param {number} depth - Depth of the obstacle.
+         */
         function spawnObstacle(position, width, height, depth) {
-            // Only Hexagonal (Dodecahedron) should be breakable. Cuboid (Box) should not.
-            const isCube = Math.random() > 0.5;
+            const isCube = Math.random() > 0.5; // Randomly choose between cube and dodecahedron
             let geometry, health;
+            let originalColor = OBSTACLE_COLOR; // Store original color for reset
 
             if (isCube) {
                 geometry = new THREE.BoxGeometry(width, height, depth);
                 health = Infinity; // Unbreakable
                 console.log("Spawned unbreakable cuboid obstacle.");
             } else {
-                geometry = new THREE.DodecahedronGeometry(width / 2);
+                geometry = new THREE.DodecahedronGeometry(width / 2); // Use width for radius
                 health = 100; // Breakable
                 console.log("Spawned breakable dodecahedron obstacle.");
             }
             
             const mesh = new THREE.Mesh(
                 geometry,
-                new THREE.MeshPhongMaterial({ color: OBSTACLE_COLOR })
+                new THREE.MeshPhongMaterial({ color: originalColor }) // Use original color
             );
             mesh.position.copy(position);
+            mesh.position.y = height / 2; // Position correctly on the ground
             scene.add(mesh);
-            obstacles.push({ mesh: mesh, health: health });
+            obstacles.push({ mesh: mesh, health: health, originalColor: originalColor, lastHitTime: 0 }); // Store original color and last hit time
             console.log(`Spawned obstacle at X:${position.x.toFixed(2)}, Y:${position.y.toFixed(2)}, Z:${position.z.toFixed(2)}`);
         }
 
@@ -1275,8 +1390,91 @@
             enemyGroup.position.copy(position);
             enemyGroup.userData.isBoss = isBoss;
             scene.add(enemyGroup); // Add the group to the scene
-            enemies.push({ mesh: enemyGroup, health: isBoss ? 200 : 100, lastShotTime: performance.now() / 1000 });
-            console.log(`Spawned ${isBoss ? 'Boss' : 'Enemy'} at X:${position.x.toFixed(2)}, Y:${position.y.toFixed(2)}, Z:${position.z.toFixed(2)}`);
+
+            const maxHealth = isBoss ? 200 : 100;
+            // Apply dynamic difficulty scaling
+            let currentWaveConfig = WAVE_CONFIG[Math.min(currentWave - 1, WAVE_CONFIG.length - 1)];
+            if (currentWave -1 >= WAVE_CONFIG.length) {
+                 currentWaveConfig = {
+                    numEnemies: currentWaveConfig.numEnemies + (currentWave - WAVE_CONFIG.length) * 2,
+                    bossChance: Math.min(0.8, currentWaveConfig.bossChance + (currentWave - WAVE_CONFIG.length) * 0.05),
+                    powerUpChance: currentWaveConfig.powerUpChance
+                };
+            }
+            const difficultyScale = 1 + (currentWave -1) * 0.1; // 10% increase per wave
+            const finalHealth = maxHealth * difficultyScale;
+            const finalSpeed = (isBoss ? PLAYER_BASE_SPEED * 0.7 : PLAYER_BASE_SPEED * 0.9) * (1 + (currentWave -1) * 0.05);
+            const finalDamage = (isBoss ? ENEMY_BULLET_DAMAGE * 1.5 : ENEMY_BULLET_DAMAGE) * (1 + (currentWave -1) * 0.05);
+
+            const enemyData = { 
+                mesh: enemyGroup, 
+                health: finalHealth, 
+                maxHealth: finalHealth, // Store max health for health bar
+                speed: finalSpeed,
+                damage: finalDamage,
+                lastShotTime: performance.now() / 1000,
+                healthBarSprite: createHealthBarSprite(finalHealth) // Create health bar sprite
+            };
+            enemies.push(enemyData);
+            scene.add(enemyData.healthBarSprite); // Add health bar to scene
+            console.log(`Spawned ${isBoss ? 'Boss' : 'Enemy'} at X:${position.x.toFixed(2)}, Y:${position.y.toFixed(2)}, Z:${position.z.toFixed(2)} with health: ${finalHealth.toFixed(0)}`);
+        }
+
+        /**
+         * Creates a Three.js Sprite to act as a health bar.
+         * @param {number} maxHealth - The maximum health for the entity.
+         * @returns {THREE.Sprite} The health bar sprite.
+         */
+        function createHealthBarSprite(maxHealth) {
+            const barWidth = 64;
+            const barHeight = 8;
+            const canvas = document.createElement('canvas');
+            canvas.width = barWidth;
+            canvas.height = barHeight;
+            const ctx = canvas.getContext('2d');
+            
+            ctx.fillStyle = '#555555'; // Background of the bar
+            ctx.fillRect(0, 0, barWidth, barHeight);
+            ctx.fillStyle = '#00ff00'; // Initial fill color (green)
+            ctx.fillRect(0, 0, barWidth, barHeight);
+
+            const texture = new THREE.CanvasTexture(canvas);
+            const material = new THREE.SpriteMaterial({ map: texture, transparent: true });
+            const sprite = new THREE.Sprite(material);
+            sprite.scale.set(10, 2, 1); // Scale sprite in 3D space
+            sprite.userData.maxHealth = maxHealth;
+            sprite.userData.currentHealth = maxHealth;
+            return sprite;
+        }
+
+        /**
+         * Updates the visual state of a health bar sprite.
+         * @param {THREE.Sprite} healthBarSprite - The health bar sprite to update.
+         * @param {number} currentHealth - The current health value.
+         */
+        function updateHealthBarSprite(healthBarSprite, currentHealth) {
+            healthBarSprite.userData.currentHealth = currentHealth;
+            const maxHealth = healthBarSprite.userData.maxHealth;
+            const healthRatio = Math.max(0, currentHealth / maxHealth); // Ensure not negative
+
+            const canvas = healthBarSprite.material.map.image;
+            const ctx = canvas.getContext('2d');
+            const barWidth = canvas.width;
+            const barHeight = canvas.height;
+
+            ctx.clearRect(0, 0, barWidth, barHeight);
+            ctx.fillStyle = '#555555'; // Background
+            ctx.fillRect(0, 0, barWidth, barHeight);
+
+            // Health gradient
+            const gradient = ctx.createLinearGradient(0, 0, barWidth, 0);
+            gradient.addColorStop(0, 'red');
+            gradient.addColorStop(0.5, 'yellow');
+            gradient.addColorStop(1, 'lime');
+            ctx.fillStyle = gradient;
+            
+            ctx.fillRect(0, 0, barWidth * healthRatio, barHeight);
+            healthBarSprite.material.map.needsUpdate = true;
         }
 
         /**
@@ -1641,21 +1839,53 @@
                 }
             }
 
-            // Update power-up durations
+            // Update power-up durations and player glow
+            const playerBodyMaterial = playerMesh.userData.bodyMaterial;
+            const playerTurretMaterial = playerMesh.userData.turretMaterial;
+            const originalPlayerColor = new THREE.Color(PLAYER_COLOR);
+
             if (scoreMultiplierActive && currentTime > scoreMultiplierEndTime) {
                 scoreMultiplierActive = false;
-                showDramaMessage("Score Multiplier Expired!", 500 / 2); // Reduced duration
+                showDramaMessage("Score Multiplier Expired!", 500 / 2);
                 console.log("Score multiplier deactivated.");
             }
-            if (playerDamageMultiplier > 1 && currentTime > damageMultiplierEndTime) {
-                playerDamageMultiplier = 1;
-                showDramaMessage("Damage Boost Expired!", 500 / 2); // Reduced duration
-                console.log("Damage boost deactivated.");
-            }
-            if (playerSpeedMultiplier > 1 && currentTime > speedMultiplierEndTime) {
-                playerSpeedMultiplier = 1;
-                showDramaMessage("Speed Boost Expired!", 500 / 2); // Reduced duration
-                console.log("Speed boost deactivated.");
+
+            if (playerDamageMultiplier > 1) {
+                if (currentTime > damageMultiplierEndTime) {
+                    playerDamageMultiplier = 1;
+                    playerBodyMaterial.emissive.setHex(0x000000); // Remove glow
+                    playerTurretMaterial.emissive.setHex(0x000000);
+                    playerBodyMaterial.color.copy(originalPlayerColor); // Reset color
+                    playerTurretMaterial.color.setHex(0x0088ff); // Reset turret top color
+                    showDramaMessage("Damage Boost Expired!", 500 / 2);
+                    console.log("Damage boost deactivated.");
+                } else {
+                    // Damage boost active - pulse orange glow
+                    const pulse = Math.sin(currentTime * 10) * 0.5 + 0.5; // 0 to 1
+                    playerBodyMaterial.emissive.setScalar(pulse * 1.5); // Stronger glow
+                    playerBodyMaterial.emissive.setHex(0xFFA500); // Orange glow for damage
+                }
+            } else if (playerSpeedMultiplier > 1) {
+                if (currentTime > speedMultiplierEndTime) {
+                    playerSpeedMultiplier = 1;
+                    playerBodyMaterial.emissive.setHex(0x000000); // Remove glow
+                    playerTurretMaterial.emissive.setHex(0x000000);
+                    playerBodyMaterial.color.copy(originalPlayerColor); // Reset color
+                    playerTurretMaterial.color.setHex(0x0088ff); // Reset turret top color
+                    showDramaMessage("Speed Boost Expired!", 500 / 2);
+                    console.log("Speed boost deactivated.");
+                } else {
+                    // Speed boost active - pulse yellow glow
+                    const pulse = Math.sin(currentTime * 10) * 0.5 + 0.5; // 0 to 1
+                    playerBodyMaterial.emissive.setScalar(pulse * 1.5);
+                    playerBodyMaterial.emissive.setHex(0xFFFF00); // Yellow glow for speed
+                }
+            } else {
+                // No boosts active, ensure no glow
+                playerBodyMaterial.emissive.setHex(0x000000);
+                playerTurretMaterial.emissive.setHex(0x000000);
+                playerBodyMaterial.color.copy(originalPlayerColor); // Ensure original color
+                playerTurretMaterial.color.setHex(0x0088ff); // Ensure original turret color
             }
         }
 
@@ -1671,6 +1901,7 @@
                     if (bullet.position.distanceTo(enemies[j].mesh.position) < 2) {
                         enemies[j].health -= bullet.userData.damage;
                         spawnDamageNumber(bullet.userData.damage, enemies[j].mesh.position);
+                        updateHealthBarSprite(enemies[j].healthBarSprite, enemies[j].health); // Update health bar
                         disposeBulletMesh(bullet); // Return bullet to pool
                         playerBullets.splice(i, 1);
                         hitEnemy = true;
@@ -1694,6 +1925,9 @@
                         if (obstacles[j].health !== Infinity) { 
                             obstacles[j].health -= bullet.userData.damage; // Bullets damage obstacles
                             spawnDamageNumber(bullet.userData.damage, obstacles[j].mesh.position);
+                            // Visual feedback for hit obstacle
+                            obstacles[j].mesh.material.color.set(0xff0000); // Flash red
+                            obstacles[j].lastHitTime = performance.now() / 1000;
                         } else {
                             console.log("Bullet hit unbreakable obstacle.");
                         }
@@ -1751,6 +1985,9 @@
                          if (obstacles[j].health !== Infinity) { 
                             obstacles[j].health -= bullet.userData.damage; // Bullets damage obstacles
                             spawnDamageNumber(bullet.userData.damage, obstacles[j].mesh.position);
+                            // Visual feedback for hit obstacle
+                            obstacles[j].mesh.material.color.set(0xff0000); // Flash red
+                            obstacles[j].lastHitTime = performance.now() / 1000;
                         } else {
                             console.log("Bullet hit unbreakable obstacle.");
                         }
@@ -1775,11 +2012,32 @@
                 const enemy = enemies[i];
                 const enemyMesh = enemy.mesh;
 
+                // Update health bar position
+                enemy.healthBarSprite.position.copy(enemyMesh.position);
+                enemy.healthBarSprite.position.y += 4; // Position above enemy mesh
+
                 // Enemy movement towards player
                 if (playerMesh) {
-                    const direction = new THREE.Vector3().subVectors(playerMesh.position, enemyMesh.position).normalize();
-                    const moveAmount = 5 * delta; // Enemy speed
-                    const enemyMovementVector = direction.clone().multiplyScalar(moveAmount);
+                    let directionToPlayer = new THREE.Vector3().subVectors(playerMesh.position, enemyMesh.position).normalize();
+                    let moveAmount = 5 * delta; // Enemy speed
+                    let enemyMovementVector = directionToPlayer.clone().multiplyScalar(moveAmount);
+
+                    // Obstacle avoidance logic
+                    let avoidanceVector = new THREE.Vector3();
+                    for (const obstacle of obstacles) {
+                        if (!obstacle.mesh.visible || obstacle.health <= 0) continue;
+                        const distance = enemyMesh.position.distanceTo(obstacle.mesh.position);
+                        // Avoidance only if within a certain radius and not a boundary wall
+                        if (distance < ENEMY_AVOIDANCE_RADIUS && !obstacle.mesh.userData.isBoundary) {
+                            const repulsionDirection = new THREE.Vector3().subVectors(enemyMesh.position, obstacle.mesh.position).normalize();
+                            // Apply stronger force closer to the obstacle
+                            avoidanceVector.addScaledVector(repulsionDirection, (ENEMY_AVOIDANCE_RADIUS - distance) / ENEMY_AVOIDANCE_RADIUS * ENEMY_AVOIDANCE_FORCE);
+                        }
+                    }
+
+                    // Combine movement and avoidance
+                    enemyMovementVector.add(avoidanceVector.multiplyScalar(delta * 60)); // Scale avoidance force
+                    enemyMovementVector.normalize().multiplyScalar(moveAmount);
 
                     const enemyCurrentPos = enemyMesh.position.clone();
                     const enemyNextPosX = enemyCurrentPos.x + enemyMovementVector.x;
@@ -1794,9 +2052,7 @@
                         potentialEnemyBoxX.translate(new THREE.Vector3(enemyMovementVector.x, 0, 0));
 
                         for (const obstacle of obstacles) {
-                            // Skip if the obstacle is not visible or already destroyed
                             if (!obstacle.mesh.visible || obstacle.health <= 0) continue;
-
                             const obstacleBox = getBoundingBox(obstacle.mesh);
                             if (potentialEnemyBoxX.intersectsBox(obstacleBox)) {
                                 collisionX = true;
@@ -1815,9 +2071,7 @@
                         potentialEnemyBoxZ.translate(new THREE.Vector3(0, 0, enemyMovementVector.z));
 
                         for (const obstacle of obstacles) {
-                            // Skip if the obstacle is not visible or already destroyed
                             if (!obstacle.mesh.visible || obstacle.health <= 0) continue;
-
                             const obstacleBox = getBoundingBox(obstacle.mesh);
                             if (potentialEnemyBoxZ.intersectsBox(obstacleBox)) {
                                 collisionZ = true;
@@ -1853,21 +2107,21 @@
                     playerScore += scoreEarned;
                     updateUI();
                     scene.remove(enemy.mesh);
+                    scene.remove(enemy.healthBarSprite); // Remove health bar
                     enemies.splice(i, 1);
                     cameraShakeIntensity = 1.0;
                     cameraShakeTime = 0.2;
                     console.log(`Enemy defeated! Gained ${scoreEarned} points. Total score: ${playerScore}`);
 
                     enemiesRemainingInWave--;
-                    if (enemiesRemainingInWave <= 0) {
-                        // Game no longer ends; just start the next wave
+                    // Only start the next wave if all *counted* enemies are gone AND no active enemy meshes exist
+                    if (enemiesRemainingInWave <= 0 && enemies.length === 0) {
                         startNextWave();
-                    } else {
-                        // Spawn a new enemy if there are still enemies for this wave
-                        // This condition ensures the total number of enemies on screen at any time
-                        // doesn't exceed `enemiesInCurrentWave` for this wave setup.
-                        if (enemies.length < WAVE_CONFIG[Math.min(currentWave - 1, WAVE_CONFIG.length - 1)].numEnemies) { 
-                            spawnRandomEnemy(WAVE_CONFIG[Math.min(currentWave - 1, WAVE_CONFIG.length - 1)].bossChance);
+                    } else { 
+                        // If there are still enemies to spawn for this wave, spawn one to keep up density
+                        const currentWaveConfig = WAVE_CONFIG[Math.min(currentWave - 1, WAVE_CONFIG.length - 1)];
+                        if (enemies.length < currentWaveConfig.numEnemies) {
+                            spawnRandomEnemy(currentWaveConfig.bossChance);
                         }
                     }
                 }
@@ -1885,14 +2139,20 @@
             }
         }
 
-        function updateObstacles() {
+        function updateObstacles(delta) {
+            const currentTime = performance.now() / 1000;
             for (let i = obstacles.length - 1; i >= 0; i--) {
+                const obstacle = obstacles[i];
                 // Only process if health is not Infinity (i.e., not an unbreakable boundary wall or cuboid obstacle)
-                if (obstacles[i].health <= 0 && obstacles[i].health !== Infinity) {
-                    spawnExplosion(obstacles[i].mesh.position, Tone.now()); // Pass Tone.now()
-                    scene.remove(obstacles[i].mesh); // Ensure mesh is removed
+                if (obstacle.health <= 0 && obstacle.health !== Infinity) {
+                    spawnExplosion(obstacle.mesh.position, Tone.now()); // Pass Tone.now()
+                    scene.remove(obstacle.mesh); // Ensure mesh is removed
                     obstacles.splice(i, 1);
                     console.log("Obstacle destroyed!");
+                } else if (obstacle.health !== Infinity && obstacle.lastHitTime > 0 && currentTime - obstacle.lastHitTime > 0.1) {
+                    // Reset color after a brief flash
+                    obstacle.mesh.material.color.set(new THREE.Color(obstacle.originalColor)); // Use new THREE.Color for reset
+                    obstacle.lastHitTime = 0; // Reset last hit time
                 }
             }
         }
@@ -1907,6 +2167,9 @@
                     }
                     console.log(`Collected ${pu.userData.type} power-up.`);
                     const currentTime = performance.now() / 1000;
+
+                    const playerBodyMaterial = playerMesh.userData.bodyMaterial;
+                    const playerTurretMaterial = playerMesh.userData.turretMaterial;
 
                     switch (pu.userData.type) {
                         case 'shield':
@@ -1945,6 +2208,7 @@
                                 }
                                 playerScore += scoreEarned;
                                 scene.remove(enemy.mesh);
+                                scene.remove(enemy.healthBarSprite); // Remove health bar
                                 enemiesRemainingInWave--; // Decrement remaining enemies for wave progression
                             });
                             enemies = []; // Clear the enemies array AFTER processing them for explosions
@@ -1962,11 +2226,15 @@
                         case 'damageBoost':
                             playerDamageMultiplier = 2; // Double damage
                             damageMultiplierEndTime = currentTime + DAMAGE_SPEED_BOOST_DURATION;
+                            playerBodyMaterial.emissive.setHex(0xFFA500); // Orange glow
+                            playerTurretMaterial.emissive.setHex(0xFFA500);
                             showDramaMessage("Damage Boost Active!", 500 / 2); // Reduced duration
                             break;
                         case 'speedBoost':
                             playerSpeedMultiplier = 2; // Double speed
                             speedMultiplierEndTime = currentTime + DAMAGE_SPEED_BOOST_DURATION;
+                            playerBodyMaterial.emissive.setHex(0xFFFF00); // Yellow glow
+                            playerTurretMaterial.emissive.setHex(0xFFFF00);
                             showDramaMessage("Speed Boost Active!", 500 / 2); // Reduced duration
                             break;
                     }
@@ -2027,7 +2295,7 @@
             ctx.font = "bold 32px Arial";
             ctx.fillStyle = new THREE.Color(color).getStyle(); // Use Three.js Color for consistency
             ctx.textAlign = "center";
-            ctx.fillText(damage, 64, 40);
+            ctx.fillText(damage.toFixed(0), 64, 40); // Round damage for display
             const texture = new THREE.CanvasTexture(canvas);
             const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, transparent: true }));
             sprite.position.copy(position);
@@ -2056,7 +2324,7 @@
         }
 
         function showDramaMessage(message, duration = 3000) {
-            dramaOverlay.textContent = message;
+            dramaOverlay.innerHTML = message; // Use innerHTML to allow <br>
             dramaOverlay.style.opacity = 1;
             if (duration > 0) { // Only set timeout if duration is positive
                 setTimeout(() => {
@@ -2130,6 +2398,117 @@
             }
         }
 
+        /**
+         * Updates the visual state of the special attack button's cooldown overlay.
+         */
+        function updateSpecialAttackUI() {
+            const currentTime = performance.now() / 1000;
+            const timeSinceLastSpecial = currentTime - lastSpecialAttackTime;
+
+            if (timeSinceLastSpecial < SPECIAL_ATTACK_COOLDOWN) {
+                const remainingTime = SPECIAL_ATTACK_COOLDOWN - timeSinceLastSpecial;
+                specialAttackCooldownOverlay.textContent = Math.ceil(remainingTime);
+                specialAttackCooldownOverlay.classList.add('visible');
+                // You could also animate a circular fill here if desired
+            } else {
+                specialAttackCooldownOverlay.classList.remove('visible');
+                specialAttackCooldownOverlay.textContent = ''; // Clear text
+            }
+        }
+
+        /**
+         * Draws the mini-map.
+         */
+        function drawMiniMap() {
+            if (!miniMapCtx || !playerMesh) return;
+
+            const mapWidth = miniMapCanvas.width;
+            const mapHeight = miniMapCanvas.height;
+            const mapCenterX = mapWidth / 2;
+            const mapCenterY = mapHeight / 2;
+            const mapScale = Math.min(mapWidth, mapHeight) / WORLD_SIZE; // Scale world units to map pixels
+
+            miniMapCtx.clearRect(0, 0, mapWidth, mapHeight);
+            miniMapCtx.fillStyle = 'rgba(0, 0, 0, 0.4)'; // Transparent dark background
+            miniMapCtx.fillRect(0, 0, mapWidth, mapHeight);
+
+            // Convert world coordinates to mini-map coordinates
+            const worldToMapX = (worldX) => (worldX - WORLD_MIN) * mapScale;
+            const worldToMapZ = (worldZ) => (worldZ - WORLD_MIN) * mapScale; // Z in world is Y in map
+
+            // Draw boundaries
+            miniMapCtx.strokeStyle = '#00ff00';
+            miniMapCtx.lineWidth = 2;
+            miniMapCtx.strokeRect(worldToMapX(WORLD_MIN), worldToMapZ(WORLD_MIN), worldToMapX(WORLD_BOUNDARY) - worldToMapX(WORLD_MIN), worldToMapZ(WORLD_BOUNDARY) - worldToMapZ(WORLD_MIN));
+
+            // Draw player
+            miniMapCtx.fillStyle = 'blue';
+            miniMapCtx.beginPath();
+            miniMapCtx.arc(worldToMapX(playerMesh.position.x), worldToMapZ(playerMesh.position.z), 3, 0, Math.PI * 2);
+            miniMapCtx.fill();
+
+            // Draw enemies
+            miniMapCtx.fillStyle = 'red';
+            enemies.forEach(enemy => {
+                miniMapCtx.beginPath();
+                miniMapCtx.rect(worldToMapX(enemy.mesh.position.x) - 2, worldToMapZ(enemy.mesh.position.z) - 2, 4, 4); // Square for enemy
+                miniMapCtx.fill();
+            });
+
+            // Draw obstacles
+            miniMapCtx.fillStyle = '#666666';
+            obstacles.forEach(obstacle => {
+                if (!obstacle.mesh.userData.isBoundary && obstacle.health > 0) { // Only draw non-boundary, alive obstacles
+                    const bbox = getBoundingBox(obstacle.mesh);
+                    const minX = worldToMapX(bbox.min.x);
+                    const minZ = worldToMapZ(bbox.min.z);
+                    const width = worldToMapX(bbox.max.x) - minX;
+                    const depth = worldToMapZ(bbox.max.z) - minZ;
+                    miniMapCtx.fillRect(minX, minZ, width, depth);
+                }
+            });
+
+            // Draw power-ups
+            powerUps.forEach(powerUp => {
+                let color;
+                switch (powerUp.userData.type) {
+                    case 'health':
+                    case 'healthPack': color = 'lime'; break;
+                    case 'shield': color = 'cyan'; break;
+                    case 'damageBoost': color = 'orange'; break;
+                    case 'speedBoost': color = 'yellow'; break;
+                    case 'scoreMultiplier': color = 'purple'; break;
+                    case 'nukePack': color = 'magenta'; break;
+                    default: color = 'white';
+                }
+                miniMapCtx.fillStyle = color;
+                miniMapCtx.beginPath();
+                miniMapCtx.arc(worldToMapX(powerUp.position.x), worldToMapZ(powerUp.position.z), 2, 0, Math.PI * 2);
+                miniMapCtx.fill();
+            });
+
+            // Draw zones
+            if (hazardZoneMesh) {
+                miniMapCtx.fillStyle = 'rgba(255, 0, 0, 0.2)';
+                miniMapCtx.beginPath();
+                miniMapCtx.arc(worldToMapX(hazardZoneCenter.x), worldToMapZ(hazardZoneCenter.z), hazardZoneRadius * mapScale, 0, Math.PI * 2);
+                miniMapCtx.fill();
+            }
+            if (greenZoneMesh) {
+                miniMapCtx.fillStyle = 'rgba(0, 255, 0, 0.2)';
+                miniMapCtx.beginPath();
+                miniMapCtx.arc(worldToMapX(greenZoneMesh.position.x), worldToMapZ(greenZoneMesh.position.z), greenZoneMesh.radius * mapScale, 0, Math.PI * 2);
+                miniMapCtx.fill();
+            }
+            if (blueZoneMesh) {
+                miniMapCtx.fillStyle = 'rgba(0, 0, 255, 0.2)';
+                miniMapCtx.beginPath();
+                miniMapCtx.arc(worldToMapX(blueZoneMesh.position.x), worldToMapZ(blueZoneMesh.position.z), blueZoneMesh.radius * mapScale, 0, Math.PI * 2);
+                miniMapCtx.fill();
+            }
+        }
+
+
         // --- Main Animation Loop ---
         function animate() {
             requestAnimationFrame(animate);
@@ -2146,10 +2525,12 @@
                 updatePlayer(delta);
                 updateBullets(delta);
                 updateEnemies(delta);
-                updateObstacles();
+                updateObstacles(delta); // Pass delta to updateObstacles for hit feedback
                 updatePowerUps();
                 updateExplosionParticles(delta);
                 updateDamageNumbers(delta);
+                updateSpecialAttackUI(); // Update the special attack button UI
+                drawMiniMap(); // Draw mini-map
 
                 // Camera shake effect
                 if (cameraShakeTime > 0) {
@@ -2157,8 +2538,10 @@
                     camera.position.y += (Math.random() - 0.5) * cameraShakeIntensity;
                     cameraShakeTime -= delta;
                 } else {
+                    // Smoothly interpolate camera position and lookAt towards player
                     const cameraOffset = new THREE.Vector3(0, 30, 40);
-                    camera.position.copy(playerMesh.position).add(cameraOffset);
+                    const targetCameraPosition = playerMesh.position.clone().add(cameraOffset);
+                    camera.position.lerp(targetCameraPosition, 0.1);
                     camera.lookAt(playerMesh.position);
                 }
             }
