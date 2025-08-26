@@ -520,14 +520,14 @@
         const PARTICLE_COUNT = 2000; // Number of background particles
         const PARTICLE_SPEED = 0.5; // Speed of background particles
         const HEALTH_PACK_RESPAWN_TIME = 15; // seconds
-        const HEALTH_RECOVERY_RATE = 20; // Increased Health per second in green zone
-        const MULTI_TARGET_DURATION = 8; // Increased seconds for blue zone effect
+        const HEALTH_RECOVERY_RATE = 30; // Increased Health per second in green zone (was 20)
+        const MULTI_TARGET_DURATION = 10; // Increased seconds for blue zone effect (was 8)
         const MULTI_TARGET_COUNT = 3; // Number of enemies to target in blue zone
-        const POWERUP_PICKUP_RADIUS = 5; // Increased radius for picking up power-ups
+        const POWERUP_PICKUP_RADIUS = 7; // Increased radius for picking up power-ups (was 5)
         const DAMAGE_SPEED_BOOST_DURATION = 7; // Duration for damage and speed boosts
         const ENEMY_AVOIDANCE_RADIUS = 10; // Radius for enemy to start avoiding obstacles
         const ENEMY_AVOIDANCE_FORCE = 0.5; // Strength of avoidance force
-        const HAZARD_ZONE_RESPAWN_TIME = 20; // Red zone respawns every 20 seconds (higher frequency)
+        const HAZARD_ZONE_RESPAWN_TIME = 15; // Red zone respawns every 15 seconds (was 20, higher frequency)
 
         // NEW TURRET ENEMY CONSTANTS
         const TURRET_ENEMY_COLOR = 0x888800; // Yellowish-brown for turrets
@@ -710,6 +710,65 @@
             // Create boundaries (now without fixed hazard zone)
             drawBoundaries();
 
+            // Create the player mesh for the first time
+            createPlayerMesh();
+
+            // Create particle background
+            createParticleBackground();
+
+            // Event Listeners
+            window.addEventListener('resize', onWindowResize, false);
+            window.addEventListener('keydown', onKeyDown, false);
+            window.addEventListener('keyup', onKeyUp, false);
+
+            // Mobile Controls Event Listeners
+            document.getElementById('upButton').addEventListener('touchstart', (e) => { e.preventDefault(); keys['KeyW'] = true; }, { passive: false });
+            document.getElementById('upButton').addEventListener('touchend', (e) => { e.preventDefault(); keys['KeyW'] = false; });
+            document.getElementById('leftButton').addEventListener('touchstart', (e) => { e.preventDefault(); keys['KeyA'] = true; }, { passive: false });
+            document.getElementById('leftButton').addEventListener('touchend', (e) => { e.preventDefault(); keys['KeyA'] = false; });
+            document.getElementById('downButton').addEventListener('touchstart', (e) => { e.preventDefault(); keys['KeyS'] = true; }, { passive: false });
+            document.getElementById('downButton').addEventListener('touchend', (e) => { e.preventDefault(); keys['KeyS'] = false; });
+            document.getElementById('rightButton').addEventListener('touchstart', (e) => { e.preventDefault(); keys['KeyD'] = true; }, { passive: false });
+            document.getElementById('rightButton').addEventListener('touchend', (e) => { e.preventDefault(); keys['KeyD'] = false; });
+
+            document.getElementById('shootButton').addEventListener('touchstart', (e) => { e.preventDefault(); keys['Space'] = true; }, { passive: false });
+            document.getElementById('shootButton').addEventListener('touchend', (e) => { e.preventDefault(); keys['Space'] = false; });
+            document.getElementById('specialAttackButton').addEventListener('touchstart', (e) => { e.preventDefault(); keys['KeyQ'] = true; }, { passive: false });
+            document.getElementById('specialAttackButton').addEventListener('touchend', (e) => { e.preventDefault(); keys['KeyQ'] = false; });
+
+            // Start Button Listener
+            startButton.addEventListener('click', startGame);
+            startButton.addEventListener('touchend', startGame); // For mobile touch
+
+            // Pause Button Listener
+            pauseButton.addEventListener('click', togglePause);
+            pauseButton.addEventListener('touchend', togglePause);
+
+            // Volume Slider Listener
+            volumeSlider.addEventListener('input', (e) => {
+                if (Tone.context && Tone.context.state === 'running') {
+                    // Tone.Master.volume.value expects decibels, convert linear 0-1 to dB
+                    // A simple conversion: 0 -> -Infinity (mute), 1 -> 0dB (full volume)
+                    // Let's map 0-1 to -40dB to 0dB.
+                    const linearVolume = parseFloat(e.target.value);
+                    Tone.Master.volume.value = Tone.gainToDb(linearVolume);
+                    console.log(`Volume set to: ${linearVolume} (dB: ${Tone.Master.volume.value.toFixed(2)})`);
+                }
+            });
+            // Set initial volume if context is already running (e.g., after a refresh where context was resumed)
+            if (Tone.context && Tone.context.state === 'running') {
+                Tone.Master.volume.value = Tone.gainToDb(parseFloat(volumeSlider.value));
+            }
+            
+            // Initial call to animate to ensure rendering starts
+            animate();
+        }
+
+        /**
+         * Creates the player's 3D mesh and adds it to the scene.
+         * This is separated to allow recreation after game over.
+         */
+        function createPlayerMesh() {
             // Player Model - More creative tank-like model
             const playerBodyGeometry = new THREE.BoxGeometry(3, 1.5, 4); // Main body (wider, lower)
             const playerBodyMaterial = new THREE.MeshPhongMaterial({ color: PLAYER_COLOR, shininess: 80 });
@@ -736,7 +795,7 @@
             playerBody.add(leftTrack);
             playerBody.add(rightTrack);
 
-            // Turret Base
+            // Turret Base (This is the part that rotates horizontally)
             const playerTurretBaseGeometry = new THREE.CylinderGeometry(0.8, 1.2, 0.8, 8); // Wider, shorter base
             const playerTurretBaseMaterial = new THREE.MeshPhongMaterial({ color: 0x0088ff, shininess: 80 });
             const playerTurretBase = new THREE.Mesh(playerTurretBaseGeometry, playerTurretBaseMaterial);
@@ -778,59 +837,6 @@
             });
             playerShieldMesh = new THREE.Mesh(shieldGeometry, shieldMaterial);
             playerMesh.add(playerShieldMesh);
-
-            // Create particle background
-            createParticleBackground();
-
-            // Event Listeners
-            window.addEventListener('resize', onWindowResize, false);
-            window.addEventListener('keydown', onKeyDown, false);
-            window.addEventListener('keyup', onKeyUp, false);
-
-            // Mobile Controls Event Listeners
-            document.getElementById('upButton').addEventListener('touchstart', (e) => { e.preventDefault(); keys['KeyW'] = true; }, { passive: false });
-            document.getElementById('upButton').addEventListener('touchend', (e) => { e.preventDefault(); keys['KeyW'] = false; });
-            document.getElementById('leftButton').addEventListener('touchstart', (e) => { e.preventDefault(); keys['KeyA'] = true; }, { passive: false });
-            document.getElementById('leftButton').addEventListener('touchend', (e) => { e.preventDefault(); keys['KeyA'] = false; });
-            document.getElementById('downButton').addEventListener('touchstart', (e) => { e.preventDefault(); keys['KeyS'] = true; }, { passive: false });
-            document.getElementById('downButton').addEventListener('touchend', (e) => { e.preventDefault(); keys['KeyS'] = false; });
-            document.getElementById('rightButton').addEventListener('touchstart', (e) => { e.preventDefault(); keys['KeyD'] = true; }, { passive: false });
-            document.getElementById('rightButton').addEventListener('touchend', (e) => { e.preventDefault(); keys['KeyD'] = false; });
-
-            document.getElementById('shootButton').addEventListener('touchstart', (e) => { e.preventDefault(); keys['Space'] = true; }, { passive: false });
-            document.getElementById('shootButton').addEventListener('touchend', (e) => { e.preventDefault(); keys['Space'] = false; });
-            document.getElementById('specialAttackButton').addEventListener('touchstart', (e) => { e.preventDefault(); keys['KeyQ'] = true; }, { passive: false });
-            document.getElementById('specialAttackButton').addEventListener('touchend', (e) => { e.preventDefault(); keys['KeyQ'] = false; });
-
-            // Start Button Listener
-            startButton.addEventListener('click', startGame);
-            startButton.addEventListener('touchend', startGame); // For mobile touch
-
-            // Pause Button Listener
-            pauseButton.addEventListener('click', togglePause);
-            pauseButton.addEventListener('touchend', togglePause);
-
-            // Volume Slider Listener
-            volumeSlider.addEventListener('input', (e) => {
-                if (Tone.context && Tone.context.state === 'running') {
-                    // Tone.Master.volume.value expects decibels, convert linear 0-1 to dB
-                    // A simple conversion: 0 -> -Infinity (mute), 1 -> 0dB (full volume)
-                    // Tone.js provides Tone.dbToGain for conversion, but we can do it manually for simplicity
-                    // or just set the volume directly if the range is appropriate.
-                    // For Tone.js, volume is in dB. A good range is -60 (very quiet) to 0 (max).
-                    // Let's map 0-1 to -40dB to 0dB.
-                    const linearVolume = parseFloat(e.target.value);
-                    Tone.Master.volume.value = Tone.gainToDb(linearVolume);
-                    console.log(`Volume set to: ${linearVolume} (dB: ${Tone.Master.volume.value.toFixed(2)})`);
-                }
-            });
-            // Set initial volume
-            if (Tone.context && Tone.context.state === 'running') {
-                Tone.Master.volume.value = Tone.gainToDb(parseFloat(volumeSlider.value));
-            }
-            
-            // Initial call to animate to ensure rendering starts
-            animate();
         }
 
         function startGame() {
@@ -840,9 +846,6 @@
             document.getElementById('mobileControls').style.display = 'flex';
             miniMapContainer.style.display = 'block'; // Show mini-map
             renderer.domElement.style.display = 'block'; // Show canvas
-
-            // Immediately reset the game visuals and state to appear on screen
-            resetGame();
 
             // Initialize Tone.js and audio components ONLY if they haven't been initialized
             // This happens on the first user gesture (the button click)
@@ -962,6 +965,7 @@
             }
             onWindowResize();
             isGameActive = true; // Ensure game is active after starting
+            resetGame(); // Immediately reset the game visuals and state to appear on screen
         }
 
         function togglePause() {
@@ -1027,10 +1031,14 @@
             playerHealth = 100;
             playerScore = 0;
             playerInvincible = true; // Player starts invincible
+            // Check if playerMesh exists before accessing its shield, or recreate player if needed
+            if (!playerMesh) {
+                createPlayerMesh();
+            }
             playerShieldMesh.visible = true; // Show shield at start
             setTimeout(() => {
                 playerInvincible = false;
-                playerShieldMesh.visible = false;
+                if (playerShieldMesh) playerShieldMesh.visible = false; // Check before accessing
                 console.log("Initial shield deactivated.");
                 showDramaMessage("Shield Expired!", 500 / 2); // Reduced duration
             }, 5000); // Invincibility for 5 seconds
@@ -1511,7 +1519,7 @@
 
             enemies.push(enemyData);
             scene.add(enemyData.healthBarSprite); // Add health bar to scene
-            console.log(`Spawned ${isBoss ? 'Boss' : 'Enemy'} at X:${position.x.toFixed(2)}, Y:${position.y.toFixed(2)}, Z:${position.z.toFixed(2)} with health: ${finalHealth.toFixed(0)} ${hasShield ? '(Shielded)' : ''}`);
+            console.log(`Spawned ${isBoss ? 'Boss' : 'Enemy'} at X:${position.x.toFixed(2)}, Z:${position.z.toFixed(2)} with health: ${finalHealth.toFixed(0)} ${hasShield ? '(Shielded)' : ''}`);
         }
 
         /**
@@ -1720,13 +1728,13 @@
             if (bulletPool.length > 0) {
                 bullet = bulletPool.pop(); 
                 bullet.visible = true;
-                console.log("Reusing bullet from pool. Pool size:", bulletPool.length);
+                // console.log("Reusing bullet from pool. Pool size:", bulletPool.length); // Reduced log frequency
             } else {
                 const geometry = new THREE.SphereGeometry(0.5, 8, 8); // Slightly larger bullet
                 // Changed to MeshPhongMaterial to support emissive
                 const material = new THREE.MeshPhongMaterial({ blending: THREE.AdditiveBlending }); 
                 bullet = new THREE.Mesh(geometry, material);
-                console.log("Creating new bullet. Pool size:", bulletPool.length);
+                // console.log("Creating new bullet. Pool size:", bulletPool.length); // Reduced log frequency
             }
             // Set material color based on bullet type
             bullet.material.color.setHex(isPlayerBullet ? 0x00ffff : 0xffff00);
@@ -1743,12 +1751,12 @@
             bullet.visible = false; // Hide it
             if (bulletPool.length < MAX_BULLETS_IN_POOL) {
                 bulletPool.push(bullet); // Add back to pool if not full
-                console.log("Bullet returned to pool. Pool size:", bulletPool.length);
+                // console.log("Bullet returned to pool. Pool size:", bulletPool.length); // Reduced log frequency
             } else {
                 // If pool is full, dispose of geometry and material to free memory
                 if (bullet.geometry) bullet.geometry.dispose();
                 if (bullet.material) bullet.material.dispose();
-                console.log("Bullet disposed (pool full).");
+                // console.log("Bullet disposed (pool full)."); // Reduced log frequency
             }
         }
 
@@ -1820,7 +1828,7 @@
 
 
         function updatePlayer(delta) {
-            if (!playerMesh) return;
+            if (!playerMesh) return; // Exit if playerMesh is null (e.g., after game over)
 
             const currentSpeed = PLAYER_BASE_SPEED * playerSpeedMultiplier;
             const moveAmount = currentSpeed * delta;
@@ -1888,7 +1896,7 @@
             playerMesh.position.y = 1 + Math.sin(performance.now() * 0.005) * 0.2; // Subtle bobbing
 
             // Player turret rotation to face closest enemy when shooting
-            const playerTurretTop = playerMesh.children[1].children[0]; // Access the turret top
+            const playerTurretBase = playerMesh.children[1]; // Correctly targets the base for horizontal rotation
             let closestEnemy = null;
             let minDistance = Infinity;
             enemies.forEach(enemy => {
@@ -1900,36 +1908,25 @@
             });
 
             if (closestEnemy) {
-                // Calculate direction vector from player's turret world position to enemy's world position
-                const turretWorldPosition = new THREE.Vector3();
-                playerTurretTop.getWorldPosition(turretWorldPosition); // Get the turret's world position
-
-                const targetVector = new THREE.Vector3().subVectors(closestEnemy.mesh.position, turretWorldPosition);
-                
-                // Convert world direction to local direction relative to playerMesh for turret rotation
-                // The turret is a child of playerMesh.playerTurretBase which is a child of playerMesh.
-                // The playerTurretTop is a child of playerTurretBase.
-                // The playerBarrel is a child of playerTurretTop.
-                // So, to get the correct local target vector for playerTurretTop, we need its parent's (playerTurretBase's) world position,
-                // and then calculate the vector to the enemy from there, then convert it to local space.
-                
+                // Get the world position of the player's turret base
                 const playerTurretBaseWorldPosition = new THREE.Vector3();
-                playerMesh.children[1].getWorldPosition(playerTurretBaseWorldPosition);
+                playerTurretBase.getWorldPosition(playerTurretBaseWorldPosition);
 
-                const localTargetVector = new THREE.Vector3().subVectors(closestEnemy.mesh.position, playerTurretBaseWorldPosition);
-                playerMesh.children[1].worldToLocal(localTargetVector); // Convert to local space of playerTurretBase
+                // Calculate the target vector from the turret base to the enemy, in world coordinates
+                const targetVectorWorld = new THREE.Vector3().subVectors(closestEnemy.mesh.position, playerTurretBaseWorldPosition);
+                
+                // Convert this world target vector into the local space of the playerTurretBase
+                const localTargetVector = playerTurretBase.worldToLocal(targetVectorWorld.clone());
 
-                // Calculate angle for turret rotation around Y-axis based on localTargetVector
-                // The turret's barrel points along its local negative Z-axis when rotation.y is 0.
-                // Math.atan2(x, z) gives the angle from the positive Z-axis towards the positive X-axis.
-                // We want the barrel (which is aligned with negative Z) to point towards the target.
+                // Calculate the target angle for the turret base's Y-rotation
+                // The barrel points along its local negative Z-axis, so Math.atan2(x, z) is appropriate for rotation around Y.
                 let targetAngle = Math.atan2(localTargetVector.x, localTargetVector.z);
                 
-                // Smoothly interpolate the turret's Y-rotation
-                playerTurretTop.rotation.y = THREE.MathUtils.lerp(playerTurretTop.rotation.y, targetAngle, 0.1);
+                // Smoothly interpolate the turret base's Y-rotation
+                playerTurretBase.rotation.y = THREE.MathUtils.lerp(playerTurretBase.rotation.y, targetAngle, 0.1);
             } else {
-                // If no enemies, reset turret to face forward (0 rotation relative to player base)
-                playerTurretTop.rotation.y = THREE.MathUtils.lerp(playerTurretTop.rotation.y, 0, 0.1);
+                // If no enemies, smoothly reset turret to face forward (0 rotation relative to player base)
+                playerTurretBase.rotation.y = THREE.MathUtils.lerp(playerTurretBase.rotation.y, 0, 0.1);
             }
 
 
@@ -2145,7 +2142,7 @@
                         // Only damage if health is not Infinity (i.e., it's a breakable obstacle)
                         if (obstacles[j].health !== Infinity) { 
                             obstacles[j].health -= bullet.userData.damage; // Bullets damage obstacles
-                            spawnDamageNumber(bullet.userData.damage, obstacles[j].mesh.position);
+                            spawnDamageNumber(bullet.userData.damage, obstacles[j].mesh.position, 0x888888); // Grey damage number for obstacle
                             // Visual feedback for hit obstacle
                             obstacles[j].mesh.material.color.set(0xff0000); // Flash red
                             obstacles[j].lastHitTime = performance.now() / 1000;
@@ -2206,7 +2203,7 @@
                          // Only damage if health is not Infinity (i.e., it's a breakable obstacle)
                          if (obstacles[j].health !== Infinity) { 
                             obstacles[j].health -= bullet.userData.damage; // Bullets damage obstacles
-                            spawnDamageNumber(bullet.userData.damage, obstacles[j].mesh.position);
+                            spawnDamageNumber(bullet.userData.damage, obstacles[j].mesh.position, 0x888888); // Grey damage number for obstacle
                             // Visual feedback for hit obstacle
                             obstacles[j].mesh.material.color.set(0xff0000); // Flash red
                             obstacles[j].lastHitTime = performance.now() / 1000;
@@ -2436,7 +2433,7 @@
                             playerShieldMesh.visible = true;
                             playerInvincible = true;
                             setTimeout(() => {
-                                playerShieldMesh.visible = false;
+                                if (playerShieldMesh) playerShieldMesh.visible = false; // Check before accessing
                                 playerInvincible = false;
                                 console.log("Shield deactivated.");
                             }, 5000);
@@ -2500,10 +2497,10 @@
                             break;
                         case 'invincibility': // New Invincibility Power-up
                             playerInvincible = true;
-                            playerShieldMesh.visible = true; // Use existing shield visual for invincibility
+                            if (playerShieldMesh) playerShieldMesh.visible = true; // Use existing shield visual for invincibility
                             setTimeout(() => {
                                 playerInvincible = false;
-                                playerShieldMesh.visible = false;
+                                if (playerShieldMesh) playerShieldMesh.visible = false;
                                 showDramaMessage("Invincibility Expired!", 500 / 2);
                                 console.log("Invincibility deactivated.");
                             }, INVINCIBILITY_DURATION * 1000);
@@ -2831,9 +2828,9 @@
                 } else {
                     // Smoothly interpolate camera position and lookAt towards player
                     if (playerMesh) { // Check if playerMesh still exists
-                        const cameraOffset = new THREE.Vector3(0, 30, 40);
+                        const cameraOffset = new THREE.Vector3(0, 30, 40); // Base offset
                         const targetCameraPosition = playerMesh.position.clone().add(cameraOffset);
-                        camera.position.lerp(targetCameraPosition, 0.1);
+                        camera.position.lerp(targetCameraPosition, 0.05); // Smoother lerp (0.05)
                         camera.lookAt(playerMesh.position);
                     }
                 }
