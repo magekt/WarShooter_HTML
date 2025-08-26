@@ -414,6 +414,30 @@
             height: 100%;
             display: block;
         }
+
+        /* Enemy Shield Visual */
+        .enemy-shield {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            border-radius: 50%;
+            border: 2px solid rgba(0, 128, 255, 0.8); /* Blue shield */
+            box-shadow: 0 0 15px rgba(0, 128, 255, 0.6);
+            animation: pulseShield 1s infinite alternate;
+            pointer-events: none;
+            z-index: -1; /* Behind the enemy mesh */
+        }
+
+        @keyframes pulseShield {
+            from {
+                transform: scale(1);
+                opacity: 1;
+            }
+            to {
+                transform: scale(1.1);
+                opacity: 0.7;
+            }
+        }
     </style>
 </head>
 <body>
@@ -512,6 +536,14 @@
         const TURRET_ENEMY_DAMAGE = 12; // Slightly higher damage
         const TURRET_SPAWN_CHANCE = 0.2; // 20% chance to spawn a turret instead of a regular enemy
 
+        // NEW FEATURE CONSTANTS
+        const INVINCIBILITY_DURATION = 5; // seconds for invincibility power-up
+        const SHIELDED_ENEMY_CHANCE = 0.3; // 30% chance for an enemy to spawn with a shield
+        const ENEMY_SHIELD_HEALTH = 50; // Health of an enemy's shield
+        const RAGE_MODE_DURATION = 5; // seconds for Rage Mode
+        const RAGE_MODE_DAMAGE_MULTIPLIER = 1.5; // Player damage multiplier in Rage Mode
+        const RAGE_MODE_FIRE_RATE_MULTIPLIER = 0.5; // Player fire rate multiplier (lower value = faster fire rate)
+
         // --- Three.js Scene Setup ---
         let scene, camera, renderer, clock;
         let dramaOverlay, damageFlash, healthFill, scoreDisplay, pauseButton, volumeSlider;
@@ -547,7 +579,7 @@
         let playerInvincible = false;
         let keys = {};
         let lastPlayerShotTime = 0;
-        const playerShootCooldown = 0.2;
+        let playerShootCooldown = 0.2; // Made mutable for Rage Mode
 
         let enemySpawnTimer = 0;
         // Reduced to 25 seconds for fewer enemies
@@ -563,6 +595,8 @@
         let speedMultiplierEndTime = 0;
         let lastSpecialAttackTime = -SPECIAL_ATTACK_COOLDOWN; // Allows immediate use at start
         let specialAttackReady = false;
+        let isRageModeActive = false; // New state for Rage Mode
+        let rageModeEndTime = 0; // End time for Rage Mode
 
         // --- Wave System Variables ---
         let currentWave = 0;
@@ -570,16 +604,18 @@
         let enemiesRemainingInWave = 0;
         // Reduced number of enemies per wave significantly
         const WAVE_CONFIG = [
-            { numEnemies: 4, bossChance: 0.1, powerUpChance: 0.5, turretChance: 0.2 }, // Added turretChance
-            { numEnemies: 6, bossChance: 0.2, powerUpChance: 0.6, turretChance: 0.25 },
-            { numEnemies: 8, bossChance: 0.3, powerUpChance: 0.7, turretChance: 0.3 },
-            { numEnemies: 11, bossChance: 0.4, powerUpChance: 0.8, turretChance: 0.35 },
-            { numEnemies: 14, bossChance: 0.5, powerUpChance: 0.9, turretChance: 0.4 }
+            { numEnemies: 4, bossChance: 0.1, powerUpChance: 0.5, turretChance: 0.2, shieldedChance: 0.1 }, // Added shieldedChance
+            { numEnemies: 6, bossChance: 0.2, powerUpChance: 0.6, turretChance: 0.25, shieldedChance: 0.15 },
+            { numEnemies: 8, bossChance: 0.3, powerUpChance: 0.7, turretChance: 0.3, shieldedChance: 0.2 },
+            { numEnemies: 11, bossChance: 0.4, powerUpChance: 0.8, turretChance: 0.35, shieldedChance: 0.25 },
+            { numEnemies: 14, bossChance: 0.5, powerUpChance: 0.9, turretChance: 0.4, shieldedChance: 0.3 }
             // Removed finalWave: true to allow indefinite play
         ];
 
         // --- Audio Elements (using Tone.js) ---
         let shootSound, explosionSound, powerupSound, specialAttackSound, bgMusicSynth, bgMusicLoop;
+        let shieldHitSound; // New sound for shield hits
+        let rageModeActivateSound; // New sound for Rage Mode activation
 
         // --- Object Pools ---
         const bulletPool = []; // Pool for player and enemy bullets
@@ -864,6 +900,28 @@
                             volume: -10 // Louder for impact
                         }).toDestination();
 
+                        // New sounds
+                        shieldHitSound = new Tone.PolySynth(Tone.PluckSynth, {
+                            attackNoise: 1,
+                            dampening: 4000,
+                            resonance: 0.9
+                        }).toDestination();
+
+                        rageModeActivateSound = new Tone.MetalSynth({
+                            frequency: 200,
+                            envelope: {
+                                attack: 0.001,
+                                decay: 0.2,
+                                sustain: 0.1,
+                                release: 0.2
+                            },
+                            harmonicity: 3.1,
+                            modulationIndex: 32,
+                            resonance: 4000,
+                            octaves: 1.5,
+                            volume: -8
+                        }).toDestination();
+
 
                         bgMusicSynth = new Tone.Synth({
                             oscillator: {
@@ -942,6 +1000,7 @@
             enemies.forEach(e => {
                 scene.remove(e.mesh);
                 if (e.healthBarSprite) scene.remove(e.healthBarSprite); // Remove health bar
+                if (e.shieldMesh) scene.remove(e.shieldMesh); // Remove shield mesh
             });
             obstacles.forEach(o => scene.remove(o.mesh));
             powerUps.forEach(p => scene.remove(p));
@@ -978,12 +1037,14 @@
 
             playerDamageMultiplier = 1;
             playerSpeedMultiplier = 1;
+            playerShootCooldown = 0.2; // Reset player shoot cooldown
             scoreMultiplierActive = false;
             scoreMultiplierEndTime = 0;
             damageMultiplierEndTime = 0;
             speedMultiplierEndTime = 0;
             lastSpecialAttackTime = -SPECIAL_ATTACK_COOLDOWN; // Special attack ready at start
             isMultiTargetActive = false; // Reset multi-target state
+            isRageModeActive = false; // Reset Rage Mode state
 
             updateUI();
             playerMesh.position.set(0, 0, 0); // Reset player position for the new model
@@ -1050,7 +1111,8 @@
                     numEnemies: baseWaveConfig.numEnemies + (currentWave - WAVE_CONFIG.length) * 2, // Add 2 enemies per wave
                     bossChance: Math.min(0.8, baseWaveConfig.bossChance + (currentWave - WAVE_CONFIG.length) * 0.05), // Increase boss chance
                     powerUpChance: baseWaveConfig.powerUpChance, // Keep power-up chance
-                    turretChance: Math.min(0.5, baseWaveConfig.turretChance + (currentWave - WAVE_CONFIG.length) * 0.05) // Increase turret chance
+                    turretChance: Math.min(0.5, baseWaveConfig.turretChance + (currentWave - WAVE_CONFIG.length) * 0.05), // Increase turret chance
+                    shieldedChance: Math.min(0.5, baseWaveConfig.shieldedChance + (currentWave - WAVE_CONFIG.length) * 0.05) // Increase shielded chance
                 };
                 console.log(`Continuing with scaled Wave ${currentWave} (using dynamic scaling)`);
                 showDramaMessage(`Wave ${currentWave} Incoming! Difficulty Scaled!`, 2000 / 2);
@@ -1075,14 +1137,15 @@
             spawnRandomZone('friendly'); // Spawn new green zone
             spawnRandomZone('enemy');    // Spawn new blue zone
 
-            // Spawn initial enemies for the wave, including turrets
+            // Spawn initial enemies for the wave, including turrets and shielded enemies
             for (let i = 0; i < Math.min(3, enemiesInCurrentWave); i++) { // Spawn a few at the start
-                spawnRandomEnemy(currentWaveConfig.bossChance, currentWaveConfig.turretChance); // Pass turretChance
+                const spawnShielded = Math.random() < currentWaveConfig.shieldedChance; // Determine if shielded
+                spawnRandomEnemy(currentWaveConfig.bossChance, currentWaveConfig.turretChance, spawnShielded); // Pass turretChance and spawnShielded
             }
 
             // Spawn power-ups for the new wave (excluding healthPack as it's handled separately)
             if (Math.random() < currentWaveConfig.powerUpChance) {
-                const powerUpTypes = ['health', 'shield', 'damageBoost', 'speedBoost', 'scoreMultiplier', 'nukePack'];
+                const powerUpTypes = ['health', 'shield', 'damageBoost', 'speedBoost', 'scoreMultiplier', 'nukePack', 'invincibility']; // Added invincibility
                 const randomType = powerUpTypes[Math.floor(Math.random() * powerUpTypes.length)];
                 spawnRandomPowerUp(randomType);
             }
@@ -1303,8 +1366,9 @@
          * Spawns a random enemy, either a regular one or a turret.
          * @param {number} bossChance - Chance for a regular enemy to be a boss.
          * @param {number} turretChance - Chance for an enemy spawn to be a turret.
+         * @param {boolean} spawnShielded - Whether the enemy should spawn with a shield.
          */
-        function spawnRandomEnemy(bossChance, turretChance) {
+        function spawnRandomEnemy(bossChance, turretChance, spawnShielded = false) { // Added spawnShielded parameter
             const spawnRange = WORLD_BOUNDARY - WORLD_MIN - 20; // Keep enemies away from edges
             const enemyRadius = 2; // Approximate radius for collision checks
             const enemyApproxHeight = 2; // Approximate height for collision checks
@@ -1349,16 +1413,16 @@
             }
             if (validPosition) {
                 if (Math.random() < turretChance) { // Use turretChance to decide
-                    spawnTurretEnemy(spawnPosition);
+                    spawnTurretEnemy(spawnPosition, spawnShielded); // Pass spawnShielded to turret
                 } else {
-                    spawnEnemy(spawnPosition, Math.random() < bossChance);
+                    spawnEnemy(spawnPosition, Math.random() < bossChance, spawnShielded); // Pass spawnShielded to regular enemy
                 }
             } else {
                 console.warn("Could not find a valid spawn position for enemy after multiple attempts.");
             }
         }
 
-        function spawnEnemy(position, isBoss = false) {
+        function spawnEnemy(position, isBoss = false, hasShield = false) { // Added hasShield parameter
             // Enemy Model - More angular with a glowing eye and spikes
             const enemyGroup = new THREE.Group();
 
@@ -1416,7 +1480,8 @@
                     numEnemies: currentWaveConfig.numEnemies + (currentWave - WAVE_CONFIG.length) * 2,
                     bossChance: Math.min(0.8, currentWaveConfig.bossChance + (currentWave - WAVE_CONFIG.length) * 0.05),
                     powerUpChance: currentWaveConfig.powerUpChance,
-                    turretChance: currentWaveConfig.turretChance
+                    turretChance: currentWaveConfig.turretChance,
+                    shieldedChance: currentWaveConfig.shieldedChance
                 };
             }
             const difficultyScale = 1 + (currentWave -1) * 0.1; // 10% increase per wave
@@ -1432,18 +1497,29 @@
                 damage: finalDamage,
                 lastShotTime: performance.now() / 1000,
                 healthBarSprite: createHealthBarSprite(finalHealth), // Create health bar sprite
-                type: 'regular' // Store enemy type
+                type: 'regular', // Store enemy type
+                hasShield: hasShield, // New: indicates if enemy has a shield
+                shieldHealth: hasShield ? ENEMY_SHIELD_HEALTH : 0, // New: shield health
+                shieldMesh: null // New: reference to the shield mesh
             };
+
+            // If hasShield is true, create and attach a shield visual
+            if (hasShield) {
+                enemyData.shieldMesh = createEnemyShieldVisual(enemyGroup);
+                scene.add(enemyData.shieldMesh); // Add to scene directly or to enemyGroup
+            }
+
             enemies.push(enemyData);
             scene.add(enemyData.healthBarSprite); // Add health bar to scene
-            console.log(`Spawned ${isBoss ? 'Boss' : 'Enemy'} at X:${position.x.toFixed(2)}, Y:${position.y.toFixed(2)}, Z:${position.z.toFixed(2)} with health: ${finalHealth.toFixed(0)}`);
+            console.log(`Spawned ${isBoss ? 'Boss' : 'Enemy'} at X:${position.x.toFixed(2)}, Y:${position.y.toFixed(2)}, Z:${position.z.toFixed(2)} with health: ${finalHealth.toFixed(0)} ${hasShield ? '(Shielded)' : ''}`);
         }
 
         /**
          * Spawns a stationary turret enemy.
          * @param {THREE.Vector3} position - The position to spawn the turret.
+         * @param {boolean} hasShield - Whether the turret should spawn with a shield.
          */
-        function spawnTurretEnemy(position) {
+        function spawnTurretEnemy(position, hasShield = false) { // Added hasShield parameter
             const turretGroup = new THREE.Group();
 
             // Base
@@ -1480,7 +1556,8 @@
                     numEnemies: currentWaveConfig.numEnemies + (currentWave - WAVE_CONFIG.length) * 2,
                     bossChance: Math.min(0.8, currentWaveConfig.bossChance + (currentWave - WAVE_CONFIG.length) * 0.05),
                     powerUpChance: currentWaveConfig.powerUpChance,
-                    turretChance: currentWaveConfig.turretChance
+                    turretChance: currentWaveConfig.turretChance,
+                    shieldedChance: currentWaveConfig.shieldedChance
                 };
             }
             const difficultyScale = 1 + (currentWave -1) * 0.1;
@@ -1496,11 +1573,42 @@
                 lastShotTime: performance.now() / 1000,
                 shootInterval: finalShootInterval, // Turret-specific shoot interval
                 healthBarSprite: createHealthBarSprite(finalHealth),
-                type: 'turret'
+                type: 'turret',
+                hasShield: hasShield,
+                shieldHealth: hasShield ? ENEMY_SHIELD_HEALTH : 0,
+                shieldMesh: null
             };
+
+            // If hasShield is true, create and attach a shield visual
+            if (hasShield) {
+                turretData.shieldMesh = createEnemyShieldVisual(turretGroup);
+                scene.add(turretData.shieldMesh); // Add to scene directly or to turretGroup
+            }
+
             enemies.push(turretData);
             scene.add(turretData.healthBarSprite);
-            console.log(`Spawned Turret Enemy at X:${position.x.toFixed(2)}, Y:${position.y.toFixed(2)}, Z:${position.z.toFixed(2)} with health: ${finalHealth.toFixed(0)}`);
+            console.log(`Spawned Turret Enemy at X:${position.x.toFixed(2)}, Y:${position.y.toFixed(2)}, Z:${position.z.toFixed(2)} with health: ${finalHealth.toFixed(0)} ${hasShield ? '(Shielded)' : ''}`);
+        }
+
+        /**
+         * Creates a visual shield effect for an enemy.
+         * @param {THREE.Object3D} enemyMesh - The enemy's mesh to attach the shield to.
+         * @returns {THREE.Mesh} The shield mesh.
+         */
+        function createEnemyShieldVisual(enemyMesh) {
+            const shieldGeometry = new THREE.SphereGeometry(3, 16, 16); // Larger sphere to encompass enemy
+            const shieldMaterial = new THREE.MeshPhongMaterial({
+                color: 0x0080ff, // Blue shield
+                opacity: 0.3,
+                transparent: true,
+                blending: THREE.AdditiveBlending,
+                emissive: 0x0080ff,
+                emissiveIntensity: 1.0
+            });
+            const shield = new THREE.Mesh(shieldGeometry, shieldMaterial);
+            shield.position.copy(enemyMesh.position); // Position at enemy's location
+            shield.position.y += 1; // Adjust vertically to center it on the enemy
+            return shield;
         }
 
 
@@ -1577,6 +1685,7 @@
                 case 'scoreMultiplier': color = 0x8A2BE2; shape = new THREE.SphereGeometry(1, 12, 12); break; // Purple for score multiplier
                 case 'healthPack': color = 0x00ff00; shape = new THREE.BoxGeometry(1.5, 1.5, 1.5); break; // Green cube for HP pack
                 case 'nukePack': color = 0x800080; shape = new THREE.OctahedronGeometry(1.5); break; // Purple octahedron for Nuke pack
+                case 'invincibility': color = 0xFFD700; shape = new THREE.TorusGeometry(1.2, 0.5, 8, 16); break; // Gold for invincibility
                 default: color = 0xffffff; shape = new THREE.SphereGeometry(1, 12, 12);
             }
             const mesh = new THREE.Mesh(
@@ -1663,6 +1772,21 @@
             }
         }
 
+        /**
+         * Triggers haptic feedback on devices that support it.
+         * @param {number} duration - The duration of the vibration in milliseconds.
+         * @param {number} [strength=0.5] - The strength of the vibration (0 to 1). (Note: Actual strength control varies by device and browser)
+         */
+        function triggerHapticFeedback(duration, strength = 0.5) {
+            if (navigator.vibrate) {
+                console.log(`Vibrating for ${duration}ms with strength ${strength}`);
+                navigator.vibrate(duration);
+            } else {
+                console.log("Haptic feedback not supported on this device.");
+            }
+        }
+
+
         function performSpecialAttack() {
             const currentTime = performance.now() / 1000;
             if (currentTime - lastSpecialAttackTime < SPECIAL_ATTACK_COOLDOWN) {
@@ -1671,52 +1795,27 @@
                 return;
             }
 
-            console.log("Performing special attack!");
+            console.log("Performing special attack: Rage Mode!");
+            triggerHapticFeedback(200); // Haptic feedback for special attack activation
             if (Tone.context && Tone.context.state === 'running') { // Check Tone.context exists and is running
-                specialAttackSound.triggerAttackRelease("C4", "1n"); // A long, impactful sound
+                rageModeActivateSound.triggerAttackRelease("4n"); // Rage Mode activation sound
             }
-            showDramaMessage("Special Attack!", 500 / 2); // Reduced duration
+            showDramaMessage("RAGE MODE ACTIVE!", 500 / 2); // Reduced duration
             lastSpecialAttackTime = currentTime;
 
-            const attackRadius = 30; // Radius of the special attack
-            const attackDamage = 150; // Damage of the special attack
+            // Activate Rage Mode
+            isRageModeActive = true;
+            rageModeEndTime = currentTime + RAGE_MODE_DURATION;
+            playerDamageMultiplier *= RAGE_MODE_DAMAGE_MULTIPLIER;
+            playerShootCooldown *= RAGE_MODE_FIRE_RATE_MULTIPLIER; // Decrease cooldown for faster fire rate
 
-            // Visual effect for special attack (simple expanding sphere)
-            const attackSphereGeometry = new THREE.SphereGeometry(1, 32, 32);
-            const attackSphereMaterial = new THREE.MeshBasicMaterial({ color: 0xff00ff, opacity: 0.5, transparent: true, blending: THREE.AdditiveBlending });
-            const attackSphere = new THREE.Mesh(attackSphereGeometry, attackSphereMaterial);
-            attackSphere.position.copy(playerMesh.position);
-            scene.add(attackSphere);
+            // Visual feedback: player glows red, maybe camera tint
+            playerMesh.userData.bodyMaterial.emissive.setHex(0xff0000); // Red glow for rage
+            playerMesh.userData.turretMaterial.emissive.setHex(0xff0000);
+            playerMesh.userData.bodyMaterial.emissiveIntensity = 2.0;
+            playerMesh.userData.turretMaterial.emissiveIntensity = 2.0;
 
-            let scale = 1;
-            const animateAttack = () => {
-                if (scale < attackRadius) {
-                    attackSphere.scale.set(scale, scale, scale);
-                    attackSphere.material.opacity = 0.5 - (scale / attackRadius) * 0.5;
-                    scale += 2; // Expand quickly
-                    requestAnimationFrame(animateAttack);
-                } else {
-                    scene.remove(attackSphere);
-                }
-            };
-            animateAttack();
-
-            enemies.forEach(enemy => {
-                if (playerMesh.position.distanceTo(enemy.mesh.position) < attackRadius) {
-                    enemy.health -= attackDamage;
-                    spawnDamageNumber(attackDamage, enemy.mesh.position, 0x00ff00); // Green for special attack damage
-                    console.log(`Special attack hit enemy. Enemy health: ${enemy.health}`);
-                }
-            });
-            // Also damage obstacles
-            obstacles.forEach(obstacle => {
-                // Check if the obstacle is breakable before applying damage
-                if (obstacle.health !== Infinity && playerMesh.position.distanceTo(obstacle.mesh.position) < attackRadius) {
-                    obstacle.health -= attackDamage;
-                    spawnDamageNumber(attackDamage, obstacle.mesh.position, 0x00ff00);
-                    console.log(`Special attack hit obstacle. Obstacle health: ${obstacle.health}`);
-                }
-            });
+            console.log("Rage Mode activated: Damage x" + playerDamageMultiplier + ", Fire Rate x" + (1/playerShootCooldown));
         }
 
 
@@ -1917,6 +2016,7 @@
                 if (!playerInvincible) {
                     playerHealth -= damageThisFrame;
                     updateUI();
+                    triggerHapticFeedback(50, 0.8); // Haptic feedback for taking damage
                     if (playerHealth <= 0) {
                         gameOver();
                     }
@@ -1934,7 +2034,7 @@
                 console.log("Score multiplier deactivated.");
             }
 
-            if (playerDamageMultiplier > 1) {
+            if (playerDamageMultiplier > 1 && !isRageModeActive) { // Don't reset if Rage Mode is active
                 if (currentTime > damageMultiplierEndTime) {
                     playerDamageMultiplier = 1;
                     playerBodyMaterial.emissive.setHex(0x000000); // Remove glow
@@ -1964,6 +2064,23 @@
                     playerBodyMaterial.emissive.setScalar(pulse * 1.5);
                     playerBodyMaterial.emissive.setHex(0xFFFF00); // Yellow glow for speed
                 }
+            } else if (isRageModeActive) { // If Rage Mode is active, maintain its glow
+                if (currentTime > rageModeEndTime) {
+                    isRageModeActive = false;
+                    playerDamageMultiplier /= RAGE_MODE_DAMAGE_MULTIPLIER; // Revert damage
+                    playerShootCooldown /= RAGE_MODE_FIRE_RATE_MULTIPLIER; // Revert fire rate
+                    playerBodyMaterial.emissive.setHex(0x000000); // Remove glow
+                    playerTurretMaterial.emissive.setHex(0x000000);
+                    playerBodyMaterial.emissiveIntensity = 1.0; // Reset intensity
+                    playerTurretMaterial.emissiveIntensity = 1.0;
+                    showDramaMessage("Rage Mode Expired!", 500 / 2);
+                    console.log("Rage Mode deactivated.");
+                } else {
+                    // Rage Mode active - pulse red glow
+                    const pulse = Math.sin(currentTime * 15) * 0.5 + 0.5; // Faster pulse
+                    playerBodyMaterial.emissive.setScalar(pulse * 2.5); // Stronger, more intense glow
+                    playerBodyMaterial.emissive.setHex(0xff0000); // Red glow for rage
+                }
             } else {
                 // No boosts active, ensure no glow
                 playerBodyMaterial.emissive.setHex(0x000000);
@@ -1983,13 +2100,33 @@
                 let hitEnemy = false;
                 for (let j = enemies.length - 1; j >= 0; j--) {
                     if (bullet.position.distanceTo(enemies[j].mesh.position) < 2) {
-                        enemies[j].health -= bullet.userData.damage;
-                        spawnDamageNumber(bullet.userData.damage, enemies[j].mesh.position);
-                        updateHealthBarSprite(enemies[j].healthBarSprite, enemies[j].health); // Update health bar
+                        const enemy = enemies[j];
+                        if (enemy.hasShield && enemy.shieldHealth > 0) {
+                            enemy.shieldHealth -= bullet.userData.damage;
+                            spawnDamageNumber(bullet.userData.damage, enemy.mesh.position, 0x0080ff); // Blue damage number for shield
+                            triggerHapticFeedback(80, 0.6); // Haptic feedback for hitting a shield
+                            if (Tone.context && Tone.context.state === 'running') {
+                                shieldHitSound.triggerAttackRelease("G4", "16n"); // Shield hit sound
+                            }
+                            if (enemy.shieldHealth <= 0) {
+                                enemy.hasShield = false;
+                                if (enemy.shieldMesh) {
+                                    scene.remove(enemy.shieldMesh);
+                                    enemy.shieldMesh = null;
+                                }
+                                showDramaMessage("Enemy Shield Broken!", 500 / 2);
+                                console.log(`Enemy shield broken! Enemy now vulnerable.`);
+                            }
+                            console.log(`Player bullet hit enemy shield. Shield health: ${enemy.shieldHealth}`);
+                        } else {
+                            enemy.health -= bullet.userData.damage;
+                            spawnDamageNumber(bullet.userData.damage, enemy.mesh.position);
+                            updateHealthBarSprite(enemy.healthBarSprite, enemy.health); // Update health bar
+                            console.log(`Player bullet hit enemy. Enemy health: ${enemy.health}`);
+                        }
                         disposeBulletMesh(bullet); // Return bullet to pool
                         playerBullets.splice(i, 1);
                         hitEnemy = true;
-                        console.log(`Player bullet hit enemy. Enemy health: ${enemies[j].health}`);
                         break;
                     }
                 }
@@ -2043,6 +2180,7 @@
                         flashDamage();
                         cameraShakeIntensity = 0.5;
                         cameraShakeTime = 0.1;
+                        triggerHapticFeedback(50, 0.8); // Haptic feedback for taking damage
                         console.log(`Enemy bullet hit player. Player health: ${playerHealth}`);
                         if (playerHealth <= 0) {
                             gameOver();
@@ -2099,6 +2237,12 @@
                 // Update health bar position
                 enemy.healthBarSprite.position.copy(enemyMesh.position);
                 enemy.healthBarSprite.position.y += (enemy.type === 'turret' ? 3.5 : 4); // Adjust height for turret
+
+                // Update shield mesh position
+                if (enemy.hasShield && enemy.shieldMesh) {
+                    enemy.shieldMesh.position.copy(enemyMesh.position);
+                    enemy.shieldMesh.position.y = enemyMesh.position.y + 1; // Center it on the enemy
+                }
 
                 // Turret-specific behavior
                 if (enemy.type === 'turret') {
@@ -2221,6 +2365,7 @@
                     updateUI();
                     scene.remove(enemy.mesh);
                     scene.remove(enemy.healthBarSprite); // Remove health bar
+                    if (enemy.shieldMesh) scene.remove(enemy.shieldMesh); // Remove shield mesh if it exists
                     enemies.splice(i, 1);
                     cameraShakeIntensity = 1.0;
                     cameraShakeTime = 0.2;
@@ -2234,7 +2379,8 @@
                         // If there are still enemies to spawn for this wave, spawn one to keep up density
                         const currentWaveConfig = WAVE_CONFIG[Math.min(currentWave - 1, WAVE_CONFIG.length - 1)];
                         if (enemies.length < currentWaveConfig.numEnemies) {
-                            spawnRandomEnemy(currentWaveConfig.bossChance, currentWaveConfig.turretChance);
+                            const spawnShielded = Math.random() < currentWaveConfig.shieldedChance;
+                            spawnRandomEnemy(currentWaveConfig.bossChance, currentWaveConfig.turretChance, spawnShielded);
                         }
                     }
                 }
@@ -2247,7 +2393,8 @@
             enemySpawnTimer += delta;
             const currentWaveConfig = WAVE_CONFIG[Math.min(currentWave - 1, WAVE_CONFIG.length - 1)];
             if (enemySpawnTimer >= enemySpawnInterval && enemies.length < currentWaveConfig.numEnemies) {
-                spawnRandomEnemy(currentWaveConfig.bossChance, currentWaveConfig.turretChance);
+                const spawnShielded = Math.random() < currentWaveConfig.shieldedChance;
+                spawnRandomEnemy(currentWaveConfig.bossChance, currentWaveConfig.turretChance, spawnShielded);
                 enemySpawnTimer = 0;
             }
         }
@@ -2322,6 +2469,7 @@
                                 playerScore += scoreEarned;
                                 scene.remove(enemy.mesh);
                                 scene.remove(enemy.healthBarSprite); // Remove health bar
+                                if (enemy.shieldMesh) scene.remove(enemy.shieldMesh); // Remove shield mesh if it exists
                                 enemiesRemainingInWave--; // Decrement remaining enemies for wave progression
                             });
                             enemies = []; // Clear the enemies array AFTER processing them for explosions
@@ -2349,6 +2497,17 @@
                             playerBodyMaterial.emissive.setHex(0xFFFF00); // Yellow glow
                             playerTurretMaterial.emissive.setHex(0xFFFF00);
                             showDramaMessage("Speed Boost Active!", 500 / 2); // Reduced duration
+                            break;
+                        case 'invincibility': // New Invincibility Power-up
+                            playerInvincible = true;
+                            playerShieldMesh.visible = true; // Use existing shield visual for invincibility
+                            setTimeout(() => {
+                                playerInvincible = false;
+                                playerShieldMesh.visible = false;
+                                showDramaMessage("Invincibility Expired!", 500 / 2);
+                                console.log("Invincibility deactivated.");
+                            }, INVINCIBILITY_DURATION * 1000);
+                            showDramaMessage("INVINCIBLE!", 500 / 2);
                             break;
                     }
                     scene.remove(pu);
@@ -2562,17 +2721,21 @@
 
             // Draw enemies
             enemies.forEach(enemy => {
+                let enemyColor = 'red';
                 if (enemy.type === 'turret') {
-                    miniMapCtx.fillStyle = 'orange'; // Different color for turrets
-                    miniMapCtx.beginPath();
-                    miniMapCtx.rect(worldToMapX(enemy.mesh.position.x) - 3, worldToMapZ(enemy.mesh.position.z) - 3, 6, 6); // Larger square for turrets
-                    miniMapCtx.fill();
-                } else {
-                    miniMapCtx.fillStyle = 'red';
-                    miniMapCtx.beginPath();
-                    miniMapCtx.rect(worldToMapX(enemy.mesh.position.x) - 2, worldToMapZ(enemy.mesh.position.z) - 2, 4, 4); // Square for regular enemy
-                    miniMapCtx.fill();
+                    enemyColor = 'orange'; // Different color for turrets
                 }
+                if (enemy.hasShield) {
+                    enemyColor = 'lightblue'; // Light blue for shielded enemies
+                }
+                miniMapCtx.fillStyle = enemyColor;
+                miniMapCtx.beginPath();
+                if (enemy.type === 'turret') {
+                    miniMapCtx.rect(worldToMapX(enemy.mesh.position.x) - 3, worldToMapZ(enemy.mesh.position.z) - 3, 6, 6); // Larger square for turrets
+                } else {
+                    miniMapCtx.rect(worldToMapX(enemy.mesh.position.x) - 2, worldToMapZ(enemy.mesh.position.z) - 2, 4, 4); // Square for regular enemy
+                }
+                miniMapCtx.fill();
             });
 
             // Draw obstacles
@@ -2599,6 +2762,7 @@
                     case 'speedBoost': color = 'yellow'; break;
                     case 'scoreMultiplier': color = 'purple'; break;
                     case 'nukePack': color = 'magenta'; break;
+                    case 'invincibility': color = 'gold'; break; // Gold for invincibility
                     default: color = 'white';
                 }
                 miniMapCtx.fillStyle = color;
