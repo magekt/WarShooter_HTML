@@ -1,0 +1,3 @@
+## 2026-03-31 - Reusing Three.js Geometries, Materials, and Vector Math Objects in Main Loop
+**Learning:** Instantiating `THREE.SphereGeometry`, `THREE.MeshBasicMaterial`, `THREE.Box3`, and `THREE.Sphere` inside bullet creation (`shootBullet`) and collision loops (`updateBullets`) created significant garbage collection pressure during intense gameplay with high bullet counts.
+**Action:** Always create shared geometries/materials for repeated entities (like bullets) during setup, and maintain persistent module-level temporary math objects (`THREE.Vector3`, `THREE.Box3`, `THREE.Sphere`) for per-frame collision calculations.
