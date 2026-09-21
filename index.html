@@ -353,6 +353,16 @@
         let hazardZoneCenter = new THREE.Vector3();
         let hazardZoneRadius = 15;
 
+        // Shared reusable geometry and materials for performance optimization
+        let bulletSharedGeometry;
+        let playerBulletMaterial;
+        let enemyBulletMaterial;
+
+        // Shared reusable math objects to avoid per-frame allocations in update loops
+        const tempBulletDirection = new THREE.Vector3();
+        const tempObstacleBox = new THREE.Box3();
+        const tempBulletSphere = new THREE.Sphere();
+
         let playerHealth = 100;
         let playerScore = 0;
         let playerInvincible = false;
@@ -465,6 +475,11 @@
             const shieldMaterial = new THREE.MeshBasicMaterial({ color: 0x00ffff, opacity: 0.3, transparent: true, blending: THREE.AdditiveBlending });
             playerShieldMesh = new THREE.Mesh(shieldGeometry, shieldMaterial);
             playerMesh.add(playerShieldMesh);
+
+            // Reusable Bullet assets initialization
+            bulletSharedGeometry = new THREE.SphereGeometry(0.3, 8, 8);
+            playerBulletMaterial = new THREE.MeshBasicMaterial({ color: 0x00ffff });
+            enemyBulletMaterial = new THREE.MeshBasicMaterial({ color: 0xffff00 });
 
             // Event Listeners
             window.addEventListener('resize', onWindowResize, false);
@@ -830,12 +845,12 @@
         }
 
         function shootBullet(origin, target, isPlayerBullet) {
-            const geometry = new THREE.SphereGeometry(0.3, 8, 8);
-            const material = new THREE.MeshBasicMaterial({ color: isPlayerBullet ? 0x00ffff : 0xffff00 }); // Player bullets cyan, enemy yellow
-            const bullet = new THREE.Mesh(geometry, material);
+            // Optimization: Reuse shared bullet geometry & material instead of instantiating new ones each shot
+            const material = isPlayerBullet ? playerBulletMaterial : enemyBulletMaterial;
+            const bullet = new THREE.Mesh(bulletSharedGeometry, material);
             bullet.position.copy(origin);
 
-            const direction = new THREE.Vector3().subVectors(target, origin).normalize();
+            const direction = tempBulletDirection.subVectors(target, origin).normalize().clone();
             bullet.userData = { direction: direction, speed: BULLET_SPEED, damage: isPlayerBullet ? (PLAYER_BASE_BULLET_DAMAGE * playerDamageMultiplier) : ENEMY_BULLET_DAMAGE };
 
             if (isPlayerBullet) {
@@ -1000,9 +1015,10 @@
                 // Check collision with obstacles
                 let hitObstacle = false;
                 for (let j = obstacles.length - 1; j >= 0; j--) {
-                    const obstacleBox = new THREE.Box3().setFromObject(obstacles[j].mesh);
-                    const bulletSphere = new THREE.Sphere(bullet.position, bullet.geometry.parameters.radius);
-                    if (obstacleBox.intersectsSphere(bulletSphere)) {
+                    // Optimization: Reuse tempBox and tempSphere objects to prevent GC pressure during high bullet volume
+                    tempObstacleBox.setFromObject(obstacles[j].mesh);
+                    tempBulletSphere.set(bullet.position, 0.3);
+                    if (tempObstacleBox.intersectsSphere(tempBulletSphere)) {
                         obstacles[j].health -= bullet.userData.damage; // Bullets damage obstacles
                         spawnDamageNumber(bullet.userData.damage, obstacles[j].mesh.position);
                         scene.remove(bullet);
@@ -1049,9 +1065,10 @@
                 // Check collision with obstacles
                 let hitObstacle = false;
                 for (let j = obstacles.length - 1; j >= 0; j--) {
-                    const obstacleBox = new THREE.Box3().setFromObject(obstacles[j].mesh);
-                    const bulletSphere = new THREE.Sphere(bullet.position, bullet.geometry.parameters.radius);
-                    if (obstacleBox.intersectsSphere(bulletSphere)) {
+                    // Optimization: Reuse tempBox and tempSphere objects to prevent GC pressure during high bullet volume
+                    tempObstacleBox.setFromObject(obstacles[j].mesh);
+                    tempBulletSphere.set(bullet.position, 0.3);
+                    if (tempObstacleBox.intersectsSphere(tempBulletSphere)) {
                         obstacles[j].health -= bullet.userData.damage; // Bullets damage obstacles
                         spawnDamageNumber(bullet.userData.damage, obstacles[j].mesh.position);
                         scene.remove(bullet);
