@@ -145,6 +145,12 @@
             background: #555;
             border-color: #777;
         }
+        .dPadButton:focus-visible,
+        .actionButton:focus-visible,
+        #startButton:focus-visible {
+            outline: 3px solid #00ffff;
+            outline-offset: 2px;
+        }
 
         #upButton { grid-area: 1 / 2 / 2 / 3; }
         #leftButton { grid-area: 2 / 1 / 3 / 2; }
@@ -290,23 +296,23 @@
     </div>
 
     <div id="gameUI" style="display: none;">
-        <div>Health: <div id="healthBar"><div id="healthFill"></div></div></div>
+        <div>Health: <div id="healthBar" role="progressbar" aria-label="Player Health" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100"><div id="healthFill"></div></div></div>
         <div id="scoreDisplay">Score: 0</div>
     </div>
     <div id="dramaOverlay"></div>
     <div id="damageFlash"></div>
 
     <!-- Mobile Controls -->
-    <div id="mobileControls" style="display: none;">
-        <div id="dPad">
-            <div class="dPadButton" id="upButton" data-key="KeyW">▲</div>
-            <div class="dPadButton" id="leftButton" data-key="KeyA">◀</div>
-            <div class="dPadButton" id="downButton" data-key="KeyS">▼</div>
-            <div class="dPadButton" id="rightButton" data-key="KeyD">▶</div>
+    <div id="mobileControls" style="display: none;" role="region" aria-label="Mobile Game Controls">
+        <div id="dPad" role="group" aria-label="Directional Controls">
+            <div class="dPadButton" id="upButton" data-key="KeyW" role="button" tabindex="0" aria-label="Move Up">▲</div>
+            <div class="dPadButton" id="leftButton" data-key="KeyA" role="button" tabindex="0" aria-label="Move Left">◀</div>
+            <div class="dPadButton" id="downButton" data-key="KeyS" role="button" tabindex="0" aria-label="Move Down">▼</div>
+            <div class="dPadButton" id="rightButton" data-key="KeyD" role="button" tabindex="0" aria-label="Move Right">▶</div>
         </div>
-        <div id="actionButtons">
-            <div class="actionButton" id="shootButton" data-key="Space">Shoot</div>
-            <div class="actionButton" id="specialAttackButton" data-key="KeyQ">Special</div>
+        <div id="actionButtons" role="group" aria-label="Action Controls">
+            <div class="actionButton" id="shootButton" data-key="Space" role="button" tabindex="0" aria-label="Shoot">Shoot</div>
+            <div class="actionButton" id="specialAttackButton" data-key="KeyQ" role="button" tabindex="0" aria-label="Special Attack">Special</div>
         </div>
     </div>
 
@@ -721,8 +727,13 @@
         }
 
         function updateUI() {
+            const healthPercent = Math.max(0, Math.min(100, Math.round(playerHealth)));
             healthFill.style.width = playerHealth + '%';
             healthFill.style.background = `linear-gradient(to right, #00ff00 ${playerHealth}%, #ff0000 ${playerHealth}%)`;
+            const healthBarElement = document.getElementById('healthBar');
+            if (healthBarElement) {
+                healthBarElement.setAttribute('aria-valuenow', healthPercent);
+            }
             scoreDisplay.textContent = `Score: ${playerScore} | Wave: ${currentWave}`;
         }
 
