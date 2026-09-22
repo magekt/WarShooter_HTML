@@ -42,16 +42,7 @@ class ProgressionManager {
   }
 
   loadData() {
-    try {
-      const saved = localStorage.getItem(SAVE_KEY);
-      if (saved) {
-        return JSON.parse(saved);
-      }
-    } catch (e) {
-      console.warn("Error loading save data, initializing default", e);
-    }
-
-    return {
+    const defaultData = {
       coins: 150,
       cultivationRealm: 'Novice Disciple Stage 1',
       realmLevel: 1,
@@ -69,6 +60,54 @@ class ProgressionManager {
         speedLevel: 0
       }
     };
+
+    try {
+      const saved = localStorage.getItem(SAVE_KEY);
+      if (!saved) return defaultData;
+
+      // Security: Parse and sanitize untrusted data from localStorage
+      const parsed = JSON.parse(saved);
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        return defaultData;
+      }
+
+      // Input validation and sanitization to prevent NaN injection or corrupted state
+      const validatedCoins = (typeof parsed.coins === 'number' && Number.isFinite(parsed.coins) && parsed.coins >= 0)
+        ? Math.floor(parsed.coins)
+        : defaultData.coins;
+
+      const validatedStyle = (typeof parsed.selectedStyle === 'string' && Object.prototype.hasOwnProperty.call(FIGHTING_STYLES, parsed.selectedStyle))
+        ? parsed.selectedStyle
+        : defaultData.selectedStyle;
+
+      const sanitizeNum = (val, fallback, min = 0) =>
+        (typeof val === 'number' && Number.isFinite(val) && val >= min) ? val : fallback;
+
+      const upgrades = parsed.upgrades || {};
+      const stats = parsed.stats || {};
+
+      return {
+        coins: validatedCoins,
+        cultivationRealm: typeof parsed.cultivationRealm === 'string' ? parsed.cultivationRealm : defaultData.cultivationRealm,
+        realmLevel: sanitizeNum(parsed.realmLevel, defaultData.realmLevel, 1),
+        selectedStyle: validatedStyle,
+        stats: {
+          maxHealth: sanitizeNum(stats.maxHealth, defaultData.stats.maxHealth, 1),
+          maxEnergy: sanitizeNum(stats.maxEnergy, defaultData.stats.maxEnergy, 1),
+          attackPower: sanitizeNum(stats.attackPower, defaultData.stats.attackPower, 0.1),
+          moveSpeed: sanitizeNum(stats.moveSpeed, defaultData.stats.moveSpeed, 0.1)
+        },
+        upgrades: {
+          healthLevel: Math.floor(sanitizeNum(upgrades.healthLevel, 0)),
+          energyLevel: Math.floor(sanitizeNum(upgrades.energyLevel, 0)),
+          attackLevel: Math.floor(sanitizeNum(upgrades.attackLevel, 0)),
+          speedLevel: Math.floor(sanitizeNum(upgrades.speedLevel, 0))
+        }
+      };
+    } catch (e) {
+      console.warn("Error loading save data, initializing default", e);
+      return defaultData;
+    }
   }
 
   saveData() {
