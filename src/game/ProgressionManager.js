@@ -36,22 +36,13 @@ export const FIGHTING_STYLES = {
   }
 };
 
-class ProgressionManager {
+export class ProgressionManager {
   constructor() {
     this.data = this.loadData();
   }
 
   loadData() {
-    try {
-      const saved = localStorage.getItem(SAVE_KEY);
-      if (saved) {
-        return JSON.parse(saved);
-      }
-    } catch (e) {
-      console.warn("Error loading save data, initializing default", e);
-    }
-
-    return {
+    const defaultData = {
       coins: 150,
       cultivationRealm: 'Novice Disciple Stage 1',
       realmLevel: 1,
@@ -69,24 +60,69 @@ class ProgressionManager {
         speedLevel: 0
       }
     };
+
+    try {
+      const saved = typeof localStorage !== 'undefined' ? localStorage.getItem(SAVE_KEY) : null;
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) {
+          return this.sanitizeData(parsed, defaultData);
+        }
+      }
+    } catch (e) {
+      console.warn("Error loading save data, initializing default", e);
+    }
+
+    return defaultData;
+  }
+
+  // Sanitize loaded save data against tampering, prototype pollution, or invalid types
+  sanitizeData(parsed, defaultData) {
+    const isNum = (v) => typeof v === 'number' && Number.isFinite(v) && v >= 0;
+    const selectedStyle = Object.prototype.hasOwnProperty.call(FIGHTING_STYLES, parsed.selectedStyle)
+      ? parsed.selectedStyle
+      : defaultData.selectedStyle;
+
+    return {
+      coins: isNum(parsed.coins) ? parsed.coins : defaultData.coins,
+      cultivationRealm: typeof parsed.cultivationRealm === 'string' ? parsed.cultivationRealm : defaultData.cultivationRealm,
+      realmLevel: isNum(parsed.realmLevel) ? parsed.realmLevel : defaultData.realmLevel,
+      selectedStyle,
+      stats: {
+        maxHealth: isNum(parsed.stats?.maxHealth) ? parsed.stats.maxHealth : defaultData.stats.maxHealth,
+        maxEnergy: isNum(parsed.stats?.maxEnergy) ? parsed.stats.maxEnergy : defaultData.stats.maxEnergy,
+        attackPower: isNum(parsed.stats?.attackPower) ? parsed.stats.attackPower : defaultData.stats.attackPower,
+        moveSpeed: isNum(parsed.stats?.moveSpeed) ? parsed.stats.moveSpeed : defaultData.stats.moveSpeed
+      },
+      upgrades: {
+        healthLevel: isNum(parsed.upgrades?.healthLevel) ? parsed.upgrades.healthLevel : defaultData.upgrades.healthLevel,
+        energyLevel: isNum(parsed.upgrades?.energyLevel) ? parsed.upgrades.energyLevel : defaultData.upgrades.energyLevel,
+        attackLevel: isNum(parsed.upgrades?.attackLevel) ? parsed.upgrades.attackLevel : defaultData.upgrades.attackLevel,
+        speedLevel: isNum(parsed.upgrades?.speedLevel) ? parsed.upgrades.speedLevel : defaultData.upgrades.speedLevel
+      }
+    };
   }
 
   saveData() {
     try {
-      localStorage.setItem(SAVE_KEY, JSON.stringify(this.data));
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem(SAVE_KEY, JSON.stringify(this.data));
+      }
     } catch (e) {
       console.error("Failed to save progression", e);
     }
   }
 
   addCoins(amount) {
-    this.data.coins += amount;
-    this.checkRealmBreakthrough();
-    this.saveData();
+    if (typeof amount === 'number' && Number.isFinite(amount) && amount > 0) {
+      this.data.coins += amount;
+      this.checkRealmBreakthrough();
+      this.saveData();
+    }
   }
 
   setStyle(styleId) {
-    if (FIGHTING_STYLES[styleId]) {
+    if (Object.prototype.hasOwnProperty.call(FIGHTING_STYLES, styleId)) {
       this.data.selectedStyle = styleId;
       this.saveData();
     }
@@ -98,6 +134,9 @@ class ProgressionManager {
   }
 
   upgradeStat(statKey) {
+    const validStats = ['health', 'energy', 'attack', 'speed'];
+    if (!validStats.includes(statKey)) return false;
+
     const cost = this.getUpgradeCost(statKey);
     if (this.data.coins >= cost) {
       this.data.coins -= cost;
