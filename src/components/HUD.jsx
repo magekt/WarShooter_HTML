@@ -76,12 +76,14 @@ export default function HUD({ gameState, gameEngine }) {
       <div style={{ position: 'absolute', bottom: '20px', right: '20px', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '10px' }}>
         
         {/* Weapon Selector Buttons */}
-        <div style={{ display: 'flex', gap: '8px' }} className="pointer-events-auto">
+        <div style={{ display: 'flex', gap: '8px' }} className="pointer-events-auto" role="group" aria-label="Weapon Selection">
           {Object.entries(player.weapons).map(([key, w]) => (
             <button
               key={key}
               onClick={() => gameEngine && gameEngine.switchWeapon(key)}
               className={`hud-btn ${player.currentWeaponKey === key ? 'active' : ''}`}
+              aria-label={`Switch to ${w.name}`}
+              aria-pressed={player.currentWeaponKey === key}
               style={{
                 padding: '8px 14px',
                 fontSize: '12px',
