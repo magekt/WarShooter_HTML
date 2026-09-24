@@ -1,0 +1,3 @@
+## 2026-09-24 - Three.js Hot Loop Math Allocations & WebGL Particle Disposal
+**Learning:** Instantiating `Vector3`, `Euler`, and `Raycaster` inside 60+ FPS game loop methods (`updatePlayer`, `updateEnemies`, `shoot`) creates severe GC pressure. Furthermore, removing WebGL particle meshes from the scene without calling `geometry.dispose()` and `material.dispose()` causes GPU VBO and shader memory leaks.
+**Action:** Always maintain class-level reusable math instances for vector arithmetic in animation frames, and explicitly call `.dispose()` on WebGL geometries and materials upon removing temporary scene objects.
