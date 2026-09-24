@@ -60,6 +60,15 @@ export class GameEngine {
     this.clock = new THREE.Clock();
     this.animationFrameId = null;
 
+    // Reusable math objects to eliminate per-frame garbage collection allocations (Bolt optimization)
+    this._raycaster = new THREE.Raycaster();
+    this._tempVector = new THREE.Vector3();
+    this._moveVector = new THREE.Vector3();
+    this._sideVector = new THREE.Vector3(1, 0, 0);
+    this._forwardVector = new THREE.Vector3(0, 0, -1);
+    this._upVector = new THREE.Vector3(0, 1, 0);
+    this._euler = new THREE.Euler(0, 0, 0, 'YXZ');
+
     // Init Three Scene
     this.initScene();
     this.bindEvents();
@@ -366,20 +375,22 @@ export class GameEngine {
     const pelletsCount = currentWeapon.type === 'shotgun' ? currentWeapon.pellets : 1;
     const dmgMultiplier = this.doubleDamageTimer > 0 ? 2 : 1;
 
+    // Cache enemy meshes array once for all pellets/shots
+    const enemyMeshes = this.enemies.map(e => e.mesh);
+
     for (let i = 0; i < pelletsCount; i++) {
-      const raycaster = new THREE.Raycaster();
       const spreadX = (Math.random() - 0.5) * currentWeapon.spread;
       const spreadY = (Math.random() - 0.5) * currentWeapon.spread;
 
-      const direction = new THREE.Vector3(spreadX, spreadY, -1);
-      direction.applyQuaternion(this.camera.quaternion);
-      direction.normalize();
+      // Reuse Vector3 and Raycaster instances to avoid GC allocations
+      this._tempVector.set(spreadX, spreadY, -1);
+      this._tempVector.applyQuaternion(this.camera.quaternion);
+      this._tempVector.normalize();
 
-      raycaster.set(this.camera.position, direction);
+      this._raycaster.set(this.camera.position, this._tempVector);
 
       // Check hit against enemies
-      const enemyMeshes = this.enemies.map(e => e.mesh);
-      const intersects = raycaster.intersectObjects(enemyMeshes, true);
+      const intersects = this._raycaster.intersectObjects(enemyMeshes, true);
 
       if (intersects.length > 0) {
         const hitObj = intersects[0].object;
@@ -562,33 +573,31 @@ export class GameEngine {
   }
 
   updatePlayer(delta) {
-    // Rotation
-    const euler = new THREE.Euler(0, 0, 0, 'YXZ');
-    euler.x = this.pitch;
-    euler.y = this.yaw;
-    this.camera.quaternion.setFromEuler(euler);
+    // Rotation (reuse _euler instance)
+    this._euler.set(this.pitch, this.yaw, 0, 'YXZ');
+    this.camera.quaternion.setFromEuler(this._euler);
 
-    // Movement direction vectors
-    const moveVector = new THREE.Vector3();
-    if (this.input.moveForward) moveVector.z -= 1;
-    if (this.input.moveBackward) moveVector.z += 1;
-    if (this.input.moveLeft) moveVector.x -= 1;
-    if (this.input.moveRight) moveVector.x += 1;
+    // Movement direction vectors (reuse _moveVector instance)
+    this._moveVector.set(0, 0, 0);
+    if (this.input.moveForward) this._moveVector.z -= 1;
+    if (this.input.moveBackward) this._moveVector.z += 1;
+    if (this.input.moveLeft) this._moveVector.x -= 1;
+    if (this.input.moveRight) this._moveVector.x += 1;
 
     // Add virtual joystick input
     if (this.input.virtualMove.x !== 0 || this.input.virtualMove.y !== 0) {
-      moveVector.x += this.input.virtualMove.x;
-      moveVector.z += this.input.virtualMove.y;
+      this._moveVector.x += this.input.virtualMove.x;
+      this._moveVector.z += this.input.virtualMove.y;
     }
 
-    moveVector.normalize();
+    this._moveVector.normalize();
 
     const speed = 10;
-    const sideVector = new THREE.Vector3(1, 0, 0).applyAxisAngle(new THREE.Vector3(0, 1, 0), this.yaw);
-    const forwardVector = new THREE.Vector3(0, 0, -1).applyAxisAngle(new THREE.Vector3(0, 1, 0), this.yaw);
+    this._sideVector.set(1, 0, 0).applyAxisAngle(this._upVector, this.yaw);
+    this._forwardVector.set(0, 0, -1).applyAxisAngle(this._upVector, this.yaw);
 
-    const velocityX = (sideVector.x * moveVector.x + forwardVector.x * -moveVector.z) * speed;
-    const velocityZ = (sideVector.z * moveVector.x + forwardVector.z * -moveVector.z) * speed;
+    const velocityX = (this._sideVector.x * this._moveVector.x + this._forwardVector.x * -this._moveVector.z) * speed;
+    const velocityZ = (this._sideVector.z * this._moveVector.x + this._forwardVector.z * -this._moveVector.z) * speed;
 
     this.player.position.x += velocityX * delta;
     this.player.position.z += velocityZ * delta;
@@ -617,13 +626,13 @@ export class GameEngine {
       // Rotate towards player
       enemy.mesh.lookAt(this.player.position.x, enemy.mesh.position.y, this.player.position.z);
 
-      // Move towards player
-      const dir = new THREE.Vector3()
+      // Move towards player (reuse _tempVector instance)
+      this._tempVector
         .subVectors(this.player.position, enemy.mesh.position)
         .setY(0)
         .normalize();
 
-      enemy.mesh.position.addScaledVector(dir, enemy.speed * delta);
+      enemy.mesh.position.addScaledVector(this._tempVector, enemy.speed * delta);
 
       // Check distance to player for attack
       const dist = enemy.mesh.position.distanceTo(this.player.position);
@@ -658,6 +667,9 @@ export class GameEngine {
       p.position.addScaledVector(p.velocity, delta);
       if (p.life <= 0) {
         this.scene.remove(p);
+        // Dispose particle geometry and material to prevent GPU WebGL memory leaks
+        if (p.geometry) p.geometry.dispose();
+        if (p.material) p.material.dispose();
         this.particles.splice(i, 1);
       }
     }
