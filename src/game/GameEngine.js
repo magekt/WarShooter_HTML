@@ -56,6 +56,12 @@ export class GameEngine {
     this.powerups = [];
     this.obstacles = [];
 
+    // Pre-allocated reusable objects to prevent garbage collection allocations in hot animation/shooting loops
+    this._raycaster = new THREE.Raycaster();
+    this._shootDirection = new THREE.Vector3();
+    this._enemyDir = new THREE.Vector3();
+    this._enemyMeshes = [];
+
     // Animation / Clock
     this.clock = new THREE.Clock();
     this.animationFrameId = null;
@@ -366,20 +372,26 @@ export class GameEngine {
     const pelletsCount = currentWeapon.type === 'shotgun' ? currentWeapon.pellets : 1;
     const dmgMultiplier = this.doubleDamageTimer > 0 ? 2 : 1;
 
+    // Populate pre-allocated mesh array to avoid per-shot array allocation
+    this._enemyMeshes.length = 0;
+    for (let j = 0; j < this.enemies.length; j++) {
+      this._enemyMeshes.push(this.enemies[j].mesh);
+    }
+
     for (let i = 0; i < pelletsCount; i++) {
-      const raycaster = new THREE.Raycaster();
       const spreadX = (Math.random() - 0.5) * currentWeapon.spread;
       const spreadY = (Math.random() - 0.5) * currentWeapon.spread;
 
-      const direction = new THREE.Vector3(spreadX, spreadY, -1);
-      direction.applyQuaternion(this.camera.quaternion);
-      direction.normalize();
+      // Reuse pre-allocated THREE.Vector3 for shoot direction
+      this._shootDirection.set(spreadX, spreadY, -1);
+      this._shootDirection.applyQuaternion(this.camera.quaternion);
+      this._shootDirection.normalize();
 
-      raycaster.set(this.camera.position, direction);
+      // Reuse pre-allocated THREE.Raycaster
+      this._raycaster.set(this.camera.position, this._shootDirection);
 
-      // Check hit against enemies
-      const enemyMeshes = this.enemies.map(e => e.mesh);
-      const intersects = raycaster.intersectObjects(enemyMeshes, true);
+      // Check hit against enemies using pre-allocated mesh array
+      const intersects = this._raycaster.intersectObjects(this._enemyMeshes, true);
 
       if (intersects.length > 0) {
         const hitObj = intersects[0].object;
@@ -617,13 +629,13 @@ export class GameEngine {
       // Rotate towards player
       enemy.mesh.lookAt(this.player.position.x, enemy.mesh.position.y, this.player.position.z);
 
-      // Move towards player
-      const dir = new THREE.Vector3()
+      // Move towards player - reuse pre-allocated Vector3 to avoid GC pressure
+      this._enemyDir
         .subVectors(this.player.position, enemy.mesh.position)
         .setY(0)
         .normalize();
 
-      enemy.mesh.position.addScaledVector(dir, enemy.speed * delta);
+      enemy.mesh.position.addScaledVector(this._enemyDir, enemy.speed * delta);
 
       // Check distance to player for attack
       const dist = enemy.mesh.position.distanceTo(this.player.position);
