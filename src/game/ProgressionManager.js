@@ -42,16 +42,7 @@ class ProgressionManager {
   }
 
   loadData() {
-    try {
-      const saved = localStorage.getItem(SAVE_KEY);
-      if (saved) {
-        return JSON.parse(saved);
-      }
-    } catch (e) {
-      console.warn("Error loading save data, initializing default", e);
-    }
-
-    return {
+    const defaultData = {
       coins: 150,
       cultivationRealm: 'Novice Disciple Stage 1',
       realmLevel: 1,
@@ -69,6 +60,30 @@ class ProgressionManager {
         speedLevel: 0
       }
     };
+
+    try {
+      const saved = localStorage.getItem(SAVE_KEY);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed && typeof parsed === 'object') {
+          // Security: Validate style key to prevent prototype pollution / invalid state injection
+          const validStyle = Object.prototype.hasOwnProperty.call(FIGHTING_STYLES, parsed.selectedStyle)
+            ? parsed.selectedStyle
+            : defaultData.selectedStyle;
+
+          return {
+            ...defaultData,
+            ...parsed,
+            coins: typeof parsed.coins === 'number' && Number.isFinite(parsed.coins) ? parsed.coins : defaultData.coins,
+            selectedStyle: validStyle
+          };
+        }
+      }
+    } catch (e) {
+      console.warn("Error loading save data, initializing default", e);
+    }
+
+    return defaultData;
   }
 
   saveData() {
@@ -80,13 +95,17 @@ class ProgressionManager {
   }
 
   addCoins(amount) {
-    this.data.coins += amount;
-    this.checkRealmBreakthrough();
-    this.saveData();
+    // Security: Validate amount input type and finiteness
+    if (typeof amount === 'number' && Number.isFinite(amount) && amount > 0) {
+      this.data.coins += amount;
+      this.checkRealmBreakthrough();
+      this.saveData();
+    }
   }
 
   setStyle(styleId) {
-    if (FIGHTING_STYLES[styleId]) {
+    // Security: Use hasOwnProperty check to avoid prototype lookup exploitation
+    if (typeof styleId === 'string' && Object.prototype.hasOwnProperty.call(FIGHTING_STYLES, styleId)) {
       this.data.selectedStyle = styleId;
       this.saveData();
     }
