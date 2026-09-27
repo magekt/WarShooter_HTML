@@ -1,0 +1,3 @@
+## 2025-05-10 - Focus Indicators & ARIA Labels in Gaming HUDs
+**Learning:** In canvas-heavy or game UI web apps, HUD buttons and touch/keyboard controls often lack standard web accessibility properties (like focus-visible rings and explicit aria-labels/pressed states), preventing screen readers and keyboard users from identifying interactive elements or knowing corresponding keyboard shortcuts.
+**Action:** Always provide explicit `:focus-visible` styles on HUD button classes and include clear `aria-label`, `aria-pressed`, and keyboard shortcut hints (`title` attributes / label descriptions) on in-game action and switcher controls.
