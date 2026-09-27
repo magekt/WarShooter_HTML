@@ -1,0 +1,3 @@
+## 2026-09-27 - Three.js WebGL Object Pre-allocation & Raycast Lookup
+**Learning:** In 3D WebGL render loops running at 60 FPS, instantiating `THREE.Vector3`, `THREE.Euler`, `THREE.Raycaster`, `THREE.BufferGeometry`, and `THREE.PointsMaterial` every frame or per bullet pellet creates significant Garbage Collection (GC) pauses and GPU memory bloat. Attaching `userData` references on Three.js meshes simplifies raycast hit resolution from $O(N)$ linear searches to $O(1)$ lookups.
+**Action:** Pre-allocate static temporary vectors/raycasters module-wide for render loops, share static particle geometries/materials across instances, use `distanceToSquared` for distance checks, and attach entity references directly to Three.js `mesh.userData`.
