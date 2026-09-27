@@ -2,6 +2,21 @@ import * as THREE from 'three';
 import { WEAPONS } from './WeaponManager';
 import { soundManager } from './AudioSystem';
 
+// Performance Optimization: Pre-allocated static vectors and objects to eliminate GC pressure in game loop
+const _tempDir = new THREE.Vector3();
+const _tempMove = new THREE.Vector3();
+const _tempSide = new THREE.Vector3();
+const _tempForward = new THREE.Vector3();
+const _upAxis = new THREE.Vector3(0, 1, 0);
+const _raycaster = new THREE.Raycaster();
+const _bulletDir = new THREE.Vector3();
+const _playerEuler = new THREE.Euler(0, 0, 0, 'YXZ');
+
+// Performance Optimization: Shared particle geometry and material to prevent WebGL memory leaks per hit particle
+const _sharedParticleGeo = new THREE.BufferGeometry();
+_sharedParticleGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array([0, 0, 0]), 3));
+const _sharedParticleMat = new THREE.PointsMaterial({ color: 0xef4444, size: 0.15 });
+
 export class GameEngine {
   constructor(container, onStateUpdate) {
     this.container = container;
@@ -366,31 +381,38 @@ export class GameEngine {
     const pelletsCount = currentWeapon.type === 'shotgun' ? currentWeapon.pellets : 1;
     const dmgMultiplier = this.doubleDamageTimer > 0 ? 2 : 1;
 
+    // Performance Optimization: Cache enemy meshes array once per shot instead of per pellet
+    const enemyMeshes = [];
+    for (let j = 0; j < this.enemies.length; j++) {
+      enemyMeshes.push(this.enemies[j].mesh);
+    }
+
     for (let i = 0; i < pelletsCount; i++) {
-      const raycaster = new THREE.Raycaster();
       const spreadX = (Math.random() - 0.5) * currentWeapon.spread;
       const spreadY = (Math.random() - 0.5) * currentWeapon.spread;
 
-      const direction = new THREE.Vector3(spreadX, spreadY, -1);
-      direction.applyQuaternion(this.camera.quaternion);
-      direction.normalize();
+      // Performance Optimization: Reuse static _bulletDir vector and _raycaster instance
+      _bulletDir.set(spreadX, spreadY, -1);
+      _bulletDir.applyQuaternion(this.camera.quaternion);
+      _bulletDir.normalize();
 
-      raycaster.set(this.camera.position, direction);
+      _raycaster.set(this.camera.position, _bulletDir);
 
-      // Check hit against enemies
-      const enemyMeshes = this.enemies.map(e => e.mesh);
-      const intersects = raycaster.intersectObjects(enemyMeshes, true);
+      if (enemyMeshes.length > 0) {
+        const intersects = _raycaster.intersectObjects(enemyMeshes, true);
 
-      if (intersects.length > 0) {
-        const hitObj = intersects[0].object;
-        let enemy = this.enemies.find(e => e.mesh === hitObj || e.mesh.children.includes(hitObj));
-        if (enemy) {
-          enemy.health -= currentWeapon.damage * dmgMultiplier;
-          soundManager.playHit();
-          this.createHitParticles(intersects[0].point);
+        if (intersects.length > 0) {
+          const hitObj = intersects[0].object;
+          // Performance Optimization: O(1) enemy lookup via direct userData reference stored during enemy spawn
+          let enemy = hitObj.userData.enemy || hitObj.parent?.userData.enemy;
+          if (enemy && enemy.health > 0) {
+            enemy.health -= currentWeapon.damage * dmgMultiplier;
+            soundManager.playHit();
+            this.createHitParticles(intersects[0].point);
 
-          if (enemy.health <= 0) {
-            this.killEnemy(enemy);
+            if (enemy.health <= 0) {
+              this.killEnemy(enemy);
+            }
           }
         }
       }
@@ -400,12 +422,9 @@ export class GameEngine {
   }
 
   createHitParticles(point) {
+    // Performance Optimization: Share static particle geometry and material to prevent allocations and GPU memory leaks
     for (let i = 0; i < 8; i++) {
-      const geo = new THREE.BufferGeometry();
-      const pos = new Float32Array([0, 0, 0]);
-      geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-      const mat = new THREE.PointsMaterial({ color: 0xef4444, size: 0.15 });
-      const p = new THREE.Points(geo, mat);
+      const p = new THREE.Points(_sharedParticleGeo, _sharedParticleMat);
       p.position.copy(point);
       p.velocity = new THREE.Vector3(
         (Math.random() - 0.5) * 4,
@@ -462,6 +481,12 @@ export class GameEngine {
       isBoss,
       lastAttackTime: 0
     };
+
+    // Performance Optimization: Direct reference link for O(1) hit resolution in raycasting
+    enemyGroup.userData.enemy = enemyObj;
+    body.userData.enemy = enemyObj;
+    eyeLeft.userData.enemy = enemyObj;
+    eyeRight.userData.enemy = enemyObj;
 
     this.enemies.push(enemyObj);
   }
@@ -562,33 +587,32 @@ export class GameEngine {
   }
 
   updatePlayer(delta) {
-    // Rotation
-    const euler = new THREE.Euler(0, 0, 0, 'YXZ');
-    euler.x = this.pitch;
-    euler.y = this.yaw;
-    this.camera.quaternion.setFromEuler(euler);
+    // Performance Optimization: Reuse static _playerEuler instance
+    _playerEuler.set(this.pitch, this.yaw, 0, 'YXZ');
+    this.camera.quaternion.setFromEuler(_playerEuler);
 
-    // Movement direction vectors
-    const moveVector = new THREE.Vector3();
-    if (this.input.moveForward) moveVector.z -= 1;
-    if (this.input.moveBackward) moveVector.z += 1;
-    if (this.input.moveLeft) moveVector.x -= 1;
-    if (this.input.moveRight) moveVector.x += 1;
+    // Performance Optimization: Reuse static _tempMove vector instance
+    _tempMove.set(0, 0, 0);
+    if (this.input.moveForward) _tempMove.z -= 1;
+    if (this.input.moveBackward) _tempMove.z += 1;
+    if (this.input.moveLeft) _tempMove.x -= 1;
+    if (this.input.moveRight) _tempMove.x += 1;
 
     // Add virtual joystick input
     if (this.input.virtualMove.x !== 0 || this.input.virtualMove.y !== 0) {
-      moveVector.x += this.input.virtualMove.x;
-      moveVector.z += this.input.virtualMove.y;
+      _tempMove.x += this.input.virtualMove.x;
+      _tempMove.z += this.input.virtualMove.y;
     }
 
-    moveVector.normalize();
+    _tempMove.normalize();
 
     const speed = 10;
-    const sideVector = new THREE.Vector3(1, 0, 0).applyAxisAngle(new THREE.Vector3(0, 1, 0), this.yaw);
-    const forwardVector = new THREE.Vector3(0, 0, -1).applyAxisAngle(new THREE.Vector3(0, 1, 0), this.yaw);
+    // Performance Optimization: Reuse static _tempSide and _tempForward vectors
+    _tempSide.set(1, 0, 0).applyAxisAngle(_upAxis, this.yaw);
+    _tempForward.set(0, 0, -1).applyAxisAngle(_upAxis, this.yaw);
 
-    const velocityX = (sideVector.x * moveVector.x + forwardVector.x * -moveVector.z) * speed;
-    const velocityZ = (sideVector.z * moveVector.x + forwardVector.z * -moveVector.z) * speed;
+    const velocityX = (_tempSide.x * _tempMove.x + _tempForward.x * -_tempMove.z) * speed;
+    const velocityZ = (_tempSide.z * _tempMove.x + _tempForward.z * -_tempMove.z) * speed;
 
     this.player.position.x += velocityX * delta;
     this.player.position.z += velocityZ * delta;
@@ -613,25 +637,26 @@ export class GameEngine {
   updateEnemies(delta) {
     const now = Date.now();
 
-    this.enemies.forEach(enemy => {
+    for (let i = 0; i < this.enemies.length; i++) {
+      const enemy = this.enemies[i];
       // Rotate towards player
       enemy.mesh.lookAt(this.player.position.x, enemy.mesh.position.y, this.player.position.z);
 
-      // Move towards player
-      const dir = new THREE.Vector3()
+      // Performance Optimization: Reuse static _tempDir vector
+      _tempDir
         .subVectors(this.player.position, enemy.mesh.position)
         .setY(0)
         .normalize();
 
-      enemy.mesh.position.addScaledVector(dir, enemy.speed * delta);
+      enemy.mesh.position.addScaledVector(_tempDir, enemy.speed * delta);
 
-      // Check distance to player for attack
-      const dist = enemy.mesh.position.distanceTo(this.player.position);
-      if (dist < 2.0 && now - enemy.lastAttackTime > 1000) {
+      // Performance Optimization: Use distanceToSquared to avoid Math.sqrt on every frame (2.0^2 = 4.0)
+      const distSq = enemy.mesh.position.distanceToSquared(this.player.position);
+      if (distSq < 4.0 && now - enemy.lastAttackTime > 1000) {
         this.damagePlayer(enemy.damage);
         enemy.lastAttackTime = now;
       }
-    });
+    }
   }
 
   damagePlayer(amount) {
@@ -668,9 +693,9 @@ export class GameEngine {
       const item = this.powerups[i];
       item.mesh.rotation.y += delta * 2;
 
-      // Distance check to player
-      const dist = item.mesh.position.distanceTo(this.player.position);
-      if (dist < 2.0) {
+      // Performance Optimization: Use distanceToSquared to avoid Math.sqrt calculation (2.0^2 = 4.0)
+      const distSq = item.mesh.position.distanceToSquared(this.player.position);
+      if (distSq < 4.0) {
         soundManager.playPowerup();
         if (item.type === 'health') {
           this.player.health = Math.min(this.player.maxHealth, this.player.health + 40);
