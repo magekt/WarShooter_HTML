@@ -54,7 +54,7 @@ export default function Menu({ gameState, onStartGame, onRestartGame }) {
               </div>
             </div>
 
-            <button onClick={onRestartGame} className="hud-btn" style={{
+            <button onClick={onRestartGame} className="hud-btn" aria-label="Deploy Again" style={{
               width: '100%',
               padding: '14px',
               fontSize: '18px',
@@ -100,7 +100,7 @@ export default function Menu({ gameState, onStartGame, onRestartGame }) {
               </div>
             </div>
 
-            <button onClick={onStartGame} className="hud-btn" style={{
+            <button onClick={onStartGame} className="hud-btn" aria-label="Start Operation" style={{
               width: '100%',
               padding: '16px',
               fontSize: '20px',
