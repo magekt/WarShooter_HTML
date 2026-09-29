@@ -41,16 +41,7 @@ class ProgressionManager {
     this.data = this.loadData();
   }
 
-  loadData() {
-    try {
-      const saved = localStorage.getItem(SAVE_KEY);
-      if (saved) {
-        return JSON.parse(saved);
-      }
-    } catch (e) {
-      console.warn("Error loading save data, initializing default", e);
-    }
-
+  getDefaultData() {
     return {
       coins: 150,
       cultivationRealm: 'Novice Disciple Stage 1',
@@ -69,6 +60,54 @@ class ProgressionManager {
         speedLevel: 0
       }
     };
+  }
+
+  validateData(raw) {
+    // Security & Data integrity check for untrusted localStorage data
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+      return this.getDefaultData();
+    }
+
+    const defaultData = this.getDefaultData();
+    const sanitizeNum = (val, min, max, defaultVal) => {
+      if (typeof val !== 'number' || !Number.isFinite(val) || val < min) return defaultVal;
+      return Math.min(val, max);
+    };
+
+    const validStyle = FIGHTING_STYLES[raw.selectedStyle] ? raw.selectedStyle : defaultData.selectedStyle;
+
+    return {
+      coins: sanitizeNum(raw.coins, 0, 100000000, defaultData.coins),
+      cultivationRealm: typeof raw.cultivationRealm === 'string' ? raw.cultivationRealm.slice(0, 50) : defaultData.cultivationRealm,
+      realmLevel: sanitizeNum(raw.realmLevel, 1, 100, defaultData.realmLevel),
+      selectedStyle: validStyle,
+      stats: {
+        maxHealth: sanitizeNum(raw.stats?.maxHealth, 1, 10000, defaultData.stats.maxHealth),
+        maxEnergy: sanitizeNum(raw.stats?.maxEnergy, 1, 10000, defaultData.stats.maxEnergy),
+        attackPower: sanitizeNum(raw.stats?.attackPower, 0.1, 1000, defaultData.stats.attackPower),
+        moveSpeed: sanitizeNum(raw.stats?.moveSpeed, 0.1, 100, defaultData.stats.moveSpeed)
+      },
+      upgrades: {
+        healthLevel: sanitizeNum(raw.upgrades?.healthLevel, 0, 1000, defaultData.upgrades.healthLevel),
+        energyLevel: sanitizeNum(raw.upgrades?.energyLevel, 0, 1000, defaultData.upgrades.energyLevel),
+        attackLevel: sanitizeNum(raw.upgrades?.attackLevel, 0, 1000, defaultData.upgrades.attackLevel),
+        speedLevel: sanitizeNum(raw.upgrades?.speedLevel, 0, 1000, defaultData.upgrades.speedLevel)
+      }
+    };
+  }
+
+  loadData() {
+    try {
+      const saved = localStorage.getItem(SAVE_KEY);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        return this.validateData(parsed);
+      }
+    } catch (e) {
+      console.warn("Error loading save data, initializing default", e);
+    }
+
+    return this.getDefaultData();
   }
 
   saveData() {
