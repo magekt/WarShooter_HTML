@@ -41,34 +41,56 @@ class ProgressionManager {
     this.data = this.loadData();
   }
 
-  loadData() {
-    try {
-      const saved = localStorage.getItem(SAVE_KEY);
-      if (saved) {
-        return JSON.parse(saved);
-      }
-    } catch (e) {
-      console.warn("Error loading save data, initializing default", e);
-    }
-
+  getDefaultData() {
     return {
       coins: 150,
       cultivationRealm: 'Novice Disciple Stage 1',
       realmLevel: 1,
       selectedStyle: 'wuxia',
+      stats: { maxHealth: 100, maxEnergy: 100, attackPower: 1, moveSpeed: 1 },
+      upgrades: { healthLevel: 0, energyLevel: 0, attackLevel: 0, speedLevel: 0 }
+    };
+  }
+
+  // Security: Sanitize and validate deserialized JSON data from localStorage
+  // to prevent prototype pollution, type mismatches, and invalid state exploits.
+  validateData(parsed) {
+    const defaults = this.getDefaultData();
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return defaults;
+
+    const num = (v, min, fallback) => (typeof v === 'number' && Number.isFinite(v) && v >= min ? v : fallback);
+    const int = (v, min, fallback) => (typeof v === 'number' && Number.isInteger(v) && v >= min ? v : fallback);
+
+    return {
+      coins: num(parsed.coins, 0, defaults.coins),
+      cultivationRealm: typeof parsed.cultivationRealm === 'string' ? parsed.cultivationRealm.slice(0, 100) : defaults.cultivationRealm,
+      realmLevel: int(parsed.realmLevel, 1, defaults.realmLevel),
+      selectedStyle: typeof parsed.selectedStyle === 'string' && FIGHTING_STYLES[parsed.selectedStyle] ? parsed.selectedStyle : defaults.selectedStyle,
       stats: {
-        maxHealth: 100,
-        maxEnergy: 100,
-        attackPower: 1,
-        moveSpeed: 1
+        maxHealth: num(parsed.stats?.maxHealth, 1, defaults.stats.maxHealth),
+        maxEnergy: num(parsed.stats?.maxEnergy, 1, defaults.stats.maxEnergy),
+        attackPower: num(parsed.stats?.attackPower, 0.1, defaults.stats.attackPower),
+        moveSpeed: num(parsed.stats?.moveSpeed, 0.1, defaults.stats.moveSpeed)
       },
       upgrades: {
-        healthLevel: 0,
-        energyLevel: 0,
-        attackLevel: 0,
-        speedLevel: 0
+        healthLevel: int(parsed.upgrades?.healthLevel, 0, defaults.upgrades.healthLevel),
+        energyLevel: int(parsed.upgrades?.energyLevel, 0, defaults.upgrades.energyLevel),
+        attackLevel: int(parsed.upgrades?.attackLevel, 0, defaults.upgrades.attackLevel),
+        speedLevel: int(parsed.upgrades?.speedLevel, 0, defaults.upgrades.speedLevel)
       }
     };
+  }
+
+  loadData() {
+    try {
+      const saved = localStorage.getItem(SAVE_KEY);
+      if (saved) {
+        return this.validateData(JSON.parse(saved));
+      }
+    } catch (e) {
+      console.warn("Error loading save data, initializing default", e);
+    }
+    return this.getDefaultData();
   }
 
   saveData() {
