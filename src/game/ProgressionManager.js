@@ -42,38 +42,59 @@ class ProgressionManager {
   }
 
   loadData() {
+    const defaultData = {
+      coins: 150,
+      cultivationRealm: 'Novice Disciple Stage 1',
+      realmLevel: 1,
+      selectedStyle: 'wuxia',
+      stats: { maxHealth: 100, maxEnergy: 100, attackPower: 1, moveSpeed: 1 },
+      upgrades: { healthLevel: 0, energyLevel: 0, attackLevel: 0, speedLevel: 0 }
+    };
+
     try {
+      if (typeof localStorage === 'undefined') return defaultData;
       const saved = localStorage.getItem(SAVE_KEY);
       if (saved) {
-        return JSON.parse(saved);
+        const parsed = JSON.parse(saved);
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+          // Security: Validate and sanitize untrusted localStorage data
+          const isNum = (v, min = 0) => typeof v === 'number' && Number.isFinite(v) && v >= min;
+
+          const stats = parsed.stats && typeof parsed.stats === 'object' ? parsed.stats : {};
+          const upgrades = parsed.upgrades && typeof parsed.upgrades === 'object' ? parsed.upgrades : {};
+
+          return {
+            coins: isNum(parsed.coins, 0) ? Math.floor(parsed.coins) : defaultData.coins,
+            selectedStyle: FIGHTING_STYLES[parsed.selectedStyle] ? parsed.selectedStyle : defaultData.selectedStyle,
+            realmLevel: isNum(parsed.realmLevel, 1) ? Math.floor(parsed.realmLevel) : defaultData.realmLevel,
+            cultivationRealm: typeof parsed.cultivationRealm === 'string' ? parsed.cultivationRealm : defaultData.cultivationRealm,
+            stats: {
+              maxHealth: isNum(stats.maxHealth, 1) ? stats.maxHealth : defaultData.stats.maxHealth,
+              maxEnergy: isNum(stats.maxEnergy, 1) ? stats.maxEnergy : defaultData.stats.maxEnergy,
+              attackPower: isNum(stats.attackPower, 0.1) ? stats.attackPower : defaultData.stats.attackPower,
+              moveSpeed: isNum(stats.moveSpeed, 0.1) ? stats.moveSpeed : defaultData.stats.moveSpeed
+            },
+            upgrades: {
+              healthLevel: isNum(upgrades.healthLevel, 0) ? Math.floor(upgrades.healthLevel) : defaultData.upgrades.healthLevel,
+              energyLevel: isNum(upgrades.energyLevel, 0) ? Math.floor(upgrades.energyLevel) : defaultData.upgrades.energyLevel,
+              attackLevel: isNum(upgrades.attackLevel, 0) ? Math.floor(upgrades.attackLevel) : defaultData.upgrades.attackLevel,
+              speedLevel: isNum(upgrades.speedLevel, 0) ? Math.floor(upgrades.speedLevel) : defaultData.upgrades.speedLevel
+            }
+          };
+        }
       }
     } catch (e) {
       console.warn("Error loading save data, initializing default", e);
     }
 
-    return {
-      coins: 150,
-      cultivationRealm: 'Novice Disciple Stage 1',
-      realmLevel: 1,
-      selectedStyle: 'wuxia',
-      stats: {
-        maxHealth: 100,
-        maxEnergy: 100,
-        attackPower: 1,
-        moveSpeed: 1
-      },
-      upgrades: {
-        healthLevel: 0,
-        energyLevel: 0,
-        attackLevel: 0,
-        speedLevel: 0
-      }
-    };
+    return defaultData;
   }
 
   saveData() {
     try {
-      localStorage.setItem(SAVE_KEY, JSON.stringify(this.data));
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem(SAVE_KEY, JSON.stringify(this.data));
+      }
     } catch (e) {
       console.error("Failed to save progression", e);
     }
