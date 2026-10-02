@@ -162,6 +162,8 @@ export default function TouchControls({ gameEngine }) {
           onTouchEnd={() => gameEngine && (gameEngine.input.shoot = false)}
           onMouseDown={() => gameEngine && (gameEngine.input.shoot = true)}
           onMouseUp={() => gameEngine && (gameEngine.input.shoot = false)}
+          aria-label="Fire weapon"
+          title="Fire weapon"
           className="touch-action-btn hud-btn"
           style={{ width: '70px', height: '70px', backgroundColor: 'rgba(239, 68, 68, 0.8)', borderColor: '#fca5a5' }}
         >
@@ -177,6 +179,8 @@ export default function TouchControls({ gameEngine }) {
                 gameEngine.player.isGrounded = false;
               }
             }}
+            aria-label="Jump"
+            title="Jump"
             className="touch-action-btn hud-btn"
             style={{ width: '55px', height: '55px', backgroundColor: 'rgba(59, 130, 246, 0.8)', borderColor: '#93c5fd' }}
           >
@@ -186,6 +190,8 @@ export default function TouchControls({ gameEngine }) {
           {/* Reload Button */}
           <button
             onTouchStart={() => gameEngine && gameEngine.reload()}
+            aria-label="Reload weapon"
+            title="Reload weapon"
             className="touch-action-btn hud-btn"
             style={{ width: '55px', height: '55px', backgroundColor: 'rgba(234, 179, 8, 0.8)', borderColor: '#fde047' }}
           >
