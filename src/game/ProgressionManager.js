@@ -36,57 +36,88 @@ export const FIGHTING_STYLES = {
   }
 };
 
-class ProgressionManager {
+const DEFAULT_PROGRESSION = {
+  coins: 150,
+  cultivationRealm: 'Novice Disciple Stage 1',
+  realmLevel: 1,
+  selectedStyle: 'wuxia',
+  stats: { maxHealth: 100, maxEnergy: 100, attackPower: 1, moveSpeed: 1 },
+  upgrades: { healthLevel: 0, energyLevel: 0, attackLevel: 0, speedLevel: 0 }
+};
+
+function sanitizeNum(n, fallback, min = 0, max = 1e9) {
+  return typeof n === 'number' && Number.isFinite(n) ? Math.min(Math.max(n, min), max) : fallback;
+}
+
+// Security: Validate and sanitize untrusted localStorage input to prevent state corruption or injection
+export function sanitizeSaveData(raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return JSON.parse(JSON.stringify(DEFAULT_PROGRESSION));
+
+  const stats = raw.stats && typeof raw.stats === 'object' ? raw.stats : {};
+  const upgrades = raw.upgrades && typeof raw.upgrades === 'object' ? raw.upgrades : {};
+
+  const styleValid = Object.prototype.hasOwnProperty.call(FIGHTING_STYLES, raw.selectedStyle);
+
+  return {
+    coins: sanitizeNum(raw.coins, DEFAULT_PROGRESSION.coins, 0, 1e9),
+    cultivationRealm: typeof raw.cultivationRealm === 'string' ? raw.cultivationRealm.slice(0, 100) : DEFAULT_PROGRESSION.cultivationRealm,
+    realmLevel: sanitizeNum(raw.realmLevel, DEFAULT_PROGRESSION.realmLevel, 1, 100),
+    selectedStyle: styleValid ? raw.selectedStyle : DEFAULT_PROGRESSION.selectedStyle,
+    stats: {
+      maxHealth: sanitizeNum(stats.maxHealth, DEFAULT_PROGRESSION.stats.maxHealth, 1, 1e5),
+      maxEnergy: sanitizeNum(stats.maxEnergy, DEFAULT_PROGRESSION.stats.maxEnergy, 1, 1e5),
+      attackPower: sanitizeNum(stats.attackPower, DEFAULT_PROGRESSION.stats.attackPower, 0.1, 1e4),
+      moveSpeed: sanitizeNum(stats.moveSpeed, DEFAULT_PROGRESSION.stats.moveSpeed, 0.1, 100)
+    },
+    upgrades: {
+      healthLevel: sanitizeNum(upgrades.healthLevel, DEFAULT_PROGRESSION.upgrades.healthLevel, 0, 1e4),
+      energyLevel: sanitizeNum(upgrades.energyLevel, DEFAULT_PROGRESSION.upgrades.energyLevel, 0, 1e4),
+      attackLevel: sanitizeNum(upgrades.attackLevel, DEFAULT_PROGRESSION.upgrades.attackLevel, 0, 1e4),
+      speedLevel: sanitizeNum(upgrades.speedLevel, DEFAULT_PROGRESSION.upgrades.speedLevel, 0, 1e4)
+    }
+  };
+}
+
+export class ProgressionManager {
   constructor() {
     this.data = this.loadData();
   }
 
   loadData() {
     try {
-      const saved = localStorage.getItem(SAVE_KEY);
-      if (saved) {
-        return JSON.parse(saved);
+      if (typeof localStorage !== 'undefined') {
+        const saved = localStorage.getItem(SAVE_KEY);
+        if (saved) {
+          return sanitizeSaveData(JSON.parse(saved));
+        }
       }
     } catch (e) {
       console.warn("Error loading save data, initializing default", e);
     }
 
-    return {
-      coins: 150,
-      cultivationRealm: 'Novice Disciple Stage 1',
-      realmLevel: 1,
-      selectedStyle: 'wuxia',
-      stats: {
-        maxHealth: 100,
-        maxEnergy: 100,
-        attackPower: 1,
-        moveSpeed: 1
-      },
-      upgrades: {
-        healthLevel: 0,
-        energyLevel: 0,
-        attackLevel: 0,
-        speedLevel: 0
-      }
-    };
+    return JSON.parse(JSON.stringify(DEFAULT_PROGRESSION));
   }
 
   saveData() {
     try {
-      localStorage.setItem(SAVE_KEY, JSON.stringify(this.data));
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem(SAVE_KEY, JSON.stringify(this.data));
+      }
     } catch (e) {
       console.error("Failed to save progression", e);
     }
   }
 
   addCoins(amount) {
-    this.data.coins += amount;
-    this.checkRealmBreakthrough();
-    this.saveData();
+    if (typeof amount === 'number' && Number.isFinite(amount) && amount > 0) {
+      this.data.coins += amount;
+      this.checkRealmBreakthrough();
+      this.saveData();
+    }
   }
 
   setStyle(styleId) {
-    if (FIGHTING_STYLES[styleId]) {
+    if (Object.prototype.hasOwnProperty.call(FIGHTING_STYLES, styleId)) {
       this.data.selectedStyle = styleId;
       this.saveData();
     }
