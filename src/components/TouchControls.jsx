@@ -1,7 +1,7 @@
 import React, { useRef, useEffect } from 'react';
 import { Target, RotateCcw, ArrowUp } from 'lucide-react';
 
-export default function TouchControls({ gameEngine }) {
+function TouchControls({ gameEngine }) {
   const joystickRef = useRef(null);
   const touchLookRef = useRef(null);
   const joystickTouchId = useRef(null);
@@ -196,3 +196,6 @@ export default function TouchControls({ gameEngine }) {
     </div>
   );
 }
+
+// Memoize TouchControls to avoid unnecessary re-renders during state updates
+export default React.memo(TouchControls);
