@@ -158,6 +158,7 @@ export default function TouchControls({ gameEngine }) {
         
         {/* Fire Button */}
         <button
+          aria-label="Fire weapon"
           onTouchStart={() => gameEngine && (gameEngine.input.shoot = true)}
           onTouchEnd={() => gameEngine && (gameEngine.input.shoot = false)}
           onMouseDown={() => gameEngine && (gameEngine.input.shoot = true)}
@@ -165,12 +166,13 @@ export default function TouchControls({ gameEngine }) {
           className="touch-action-btn hud-btn"
           style={{ width: '70px', height: '70px', backgroundColor: 'rgba(239, 68, 68, 0.8)', borderColor: '#fca5a5' }}
         >
-          <Target size={36} />
+          <Target size={36} aria-hidden="true" />
         </button>
 
         <div style={{ display: 'flex', gap: '15px' }}>
           {/* Jump Button */}
           <button
+            aria-label="Jump"
             onTouchStart={() => {
               if (gameEngine && gameEngine.player.isGrounded) {
                 gameEngine.player.velocity.y = 7.5;
@@ -180,16 +182,17 @@ export default function TouchControls({ gameEngine }) {
             className="touch-action-btn hud-btn"
             style={{ width: '55px', height: '55px', backgroundColor: 'rgba(59, 130, 246, 0.8)', borderColor: '#93c5fd' }}
           >
-            <ArrowUp size={24} />
+            <ArrowUp size={24} aria-hidden="true" />
           </button>
 
           {/* Reload Button */}
           <button
+            aria-label="Reload weapon"
             onTouchStart={() => gameEngine && gameEngine.reload()}
             className="touch-action-btn hud-btn"
             style={{ width: '55px', height: '55px', backgroundColor: 'rgba(234, 179, 8, 0.8)', borderColor: '#fde047' }}
           >
-            <RotateCcw size={24} />
+            <RotateCcw size={24} aria-hidden="true" />
           </button>
         </div>
       </div>
