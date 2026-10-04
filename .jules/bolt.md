@@ -1,0 +1,3 @@
+## 2025-03-01 - Reusable Three.js Math Objects & Mesh Direct References
+**Learning:** Instantiating Three.js math primitives (`Vector3`, `Raycaster`, `Euler`, `BufferGeometry`) inside per-frame update loops (`requestAnimationFrame`) or frequent action handlers (such as bullet shooting) leads to high garbage collection overhead and frame drops. Attaching domain objects to Three.js `mesh.userData` allows $O(1)$ hit target lookup during raycasting.
+**Action:** Always pre-allocate static math objects at instance level and attach direct object references on `userData` when working with Three.js scene graphs.
