@@ -158,6 +158,7 @@ export default function TouchControls({ gameEngine }) {
         
         {/* Fire Button */}
         <button
+          aria-label="Fire weapon"
           onTouchStart={() => gameEngine && (gameEngine.input.shoot = true)}
           onTouchEnd={() => gameEngine && (gameEngine.input.shoot = false)}
           onMouseDown={() => gameEngine && (gameEngine.input.shoot = true)}
@@ -171,6 +172,7 @@ export default function TouchControls({ gameEngine }) {
         <div style={{ display: 'flex', gap: '15px' }}>
           {/* Jump Button */}
           <button
+            aria-label="Jump"
             onTouchStart={() => {
               if (gameEngine && gameEngine.player.isGrounded) {
                 gameEngine.player.velocity.y = 7.5;
@@ -185,6 +187,7 @@ export default function TouchControls({ gameEngine }) {
 
           {/* Reload Button */}
           <button
+            aria-label="Reload weapon"
             onTouchStart={() => gameEngine && gameEngine.reload()}
             className="touch-action-btn hud-btn"
             style={{ width: '55px', height: '55px', backgroundColor: 'rgba(234, 179, 8, 0.8)', borderColor: '#fde047' }}

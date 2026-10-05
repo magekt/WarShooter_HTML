@@ -17,8 +17,15 @@ export default function HUD({ gameState, gameEngine }) {
         <div className="hud-panel animate__animated animate__fadeInLeft" style={{ padding: '12px 20px', minWidth: '220px' }}>
           {/* Health */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
-            <Heart size={20} color="#ef4444" fill="#ef4444" />
-            <div style={{ flex: 1, height: '14px', background: '#334155', borderRadius: '7px', overflow: 'hidden', border: '1px solid rgba(255,255,255,0.2)' }}>
+            <Heart size={20} color="#ef4444" fill="#ef4444" aria-hidden="true" />
+            <div
+              role="progressbar"
+              aria-label="Health"
+              aria-valuenow={Math.ceil(player.health)}
+              aria-valuemin={0}
+              aria-valuemax={player.maxHealth}
+              style={{ flex: 1, height: '14px', background: '#334155', borderRadius: '7px', overflow: 'hidden', border: '1px solid rgba(255,255,255,0.2)' }}
+            >
               <div style={{
                 height: '100%',
                 width: `${(player.health / player.maxHealth) * 100}%`,
@@ -33,8 +40,15 @@ export default function HUD({ gameState, gameEngine }) {
 
           {/* Armor */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <Shield size={20} color="#3b82f6" fill="#3b82f6" />
-            <div style={{ flex: 1, height: '10px', background: '#334155', borderRadius: '5px', overflow: 'hidden', border: '1px solid rgba(255,255,255,0.2)' }}>
+            <Shield size={20} color="#3b82f6" fill="#3b82f6" aria-hidden="true" />
+            <div
+              role="progressbar"
+              aria-label="Armor"
+              aria-valuenow={Math.ceil(player.armor)}
+              aria-valuemin={0}
+              aria-valuemax={player.maxArmor}
+              style={{ flex: 1, height: '10px', background: '#334155', borderRadius: '5px', overflow: 'hidden', border: '1px solid rgba(255,255,255,0.2)' }}
+            >
               <div style={{
                 height: '100%',
                 width: `${(player.armor / player.maxArmor) * 100}%`,
@@ -76,10 +90,12 @@ export default function HUD({ gameState, gameEngine }) {
       <div style={{ position: 'absolute', bottom: '20px', right: '20px', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '10px' }}>
         
         {/* Weapon Selector Buttons */}
-        <div style={{ display: 'flex', gap: '8px' }} className="pointer-events-auto">
+        <div style={{ display: 'flex', gap: '8px' }} className="pointer-events-auto" role="toolbar" aria-label="Weapon selection">
           {Object.entries(player.weapons).map(([key, w]) => (
             <button
               key={key}
+              aria-label={`Select ${w.name}`}
+              aria-pressed={player.currentWeaponKey === key}
               onClick={() => gameEngine && gameEngine.switchWeapon(key)}
               className={`hud-btn ${player.currentWeaponKey === key ? 'active' : ''}`}
               style={{
